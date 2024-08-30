@@ -203,7 +203,5 @@ $ git commit -m "Feat: 로그인 API 개발 완료 (#이슈번호)"
 > - Test 클래스는 접미사로 Test 사용(ex. memberFindTest)
 
 ### Communication Rules
-> - ZEP, Discord 활용
-> - 매주 월요일 주가 스프린트
-> - 매일 오정 10:30 데일리 스크럼
-> - 매주 금요일 주간 회고
+> - Discord 활용
+> - 매일 토요일 오전 10시 회의
