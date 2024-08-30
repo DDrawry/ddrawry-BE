@@ -65,13 +65,13 @@
 
 ## 📑 프로젝트 규칙
 
-### Branch Strategy
+### 🌿 Branch Strategy
 > - main / dev / docs 브랜치 기본 생성
 > - main과 dev로 직접 push 제한
 > - README, gitignore 같은 문서파일 docs로 push
 > - PR 전 최소 2인 이상 승인 필수
 
-### Progress
+### 🚀 Progress
 #### 1. CLONE
 > **팀 리포지토리를 각자의 로컬로 클론**
 > ```bash
@@ -146,7 +146,7 @@
 > $ git push -d origin feat-yjm-github-setting-#1
 > ```
 
-### Git Convention
+### 🔍 Git Convention
 > 1. 적절한 커밋 접두사 작성
 > 2. 커밋 메시지 내용 작성
 > 3. 내용 뒤에 이슈 (#이슈 번호)와 같이 작성하여 이슈 연결
@@ -168,9 +168,8 @@
 $ git commit -m "Feat: 로그인 API 개발 완료 (#이슈번호)"
 ```
 
-
-### Pull Request
-> ### Title
+### 🚀 Pull Request
+> ### PR Title
 > * 제목은 '[Feat] 홈 페이지 구현'과 같이 작성합니다.
 
 > ### PR Type
@@ -192,9 +191,9 @@ $ git commit -m "Feat: 로그인 API 개발 완료 (#이슈번호)"
 > ### Discussion
 > * 추후 논의할 점에 대해 작성해주세요.
 
-### Code Convention
-> - 최대한 PEP8 참고
-> - 패키지명 전체 소문자
+### 📚 Code Convention
+> - PEP8 준수
+> - 패키지명: 소문자
 > - 클래스명, 인터페이스명 CamelCase
 > - 클래스 이름 명사 사용
 > - 상수명 SNAKE_CASE
@@ -202,6 +201,8 @@ $ git commit -m "Feat: 로그인 API 개발 완료 (#이슈번호)"
 > - service 계층 메서드명 create, update, find, delete로 CRUD 통일(ex. createMember) 
 > - Test 클래스는 접미사로 Test 사용(ex. memberFindTest)
 
-### Communication Rules
+### 📢 Communication Rules
 > - Discord 활용
 > - 매일 토요일 오전 10시 회의
+> - 구글 시트로 작업 일정 관리
+> - 주간 회의록 공유
