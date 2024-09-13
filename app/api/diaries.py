@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Query
 from pydantic import BaseModel
 from enum import Enum
-
+from typing import List, Optional
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/diaries")
 
@@ -194,3 +195,42 @@ async def get_like_diaries():
             },
         ],
     }
+
+
+# /diaries/main?type=calender&date=202406
+@router.get("/main")
+async def get_main_diaries(type: str = Query(..., description="조회 유형 (list 또는 calender)"),
+                           date: str = Query(..., description="조회할 년월 (예: 202408)")):
+    calendar_data = [
+        {
+            "id": diary["id"],
+            "date": diary["date"],
+            "image": diary["image"],
+            "bookmark": diary["bookmark"]
+        }
+        for diary in diaries_list
+    ]
+
+    return JSONResponse(content={
+        "status": 200,
+        "message": "다이어리 목록형 조회 완료",
+        "data": calendar_data
+    })
+
+# 더미
+diaries_list = [
+    {
+        "id": 1,
+        "date": "2024-08-13",
+        "title": "신나는 산책을 했따",
+        "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...AYH/",
+        "bookmark": True
+    },
+    {
+        "id": 2,
+        "date": "2024-08-19",
+        "title": "냠냠 맛있는거 먹기",
+        "image": None,  # 이미지가 없는 경우
+        "bookmark": False
+    }
+]
