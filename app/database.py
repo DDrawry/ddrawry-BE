@@ -15,7 +15,7 @@ from typing import Generator
 from fastapi import Depends
 
 # 데이터베이스 URL 설정
-SQLALCHEMY_DATABASE_URL = "mysql+pymysql://root:1234@localhost/ddrawry"
+SQLALCHEMY_DATABASE_URL = "mysql+pymysql://root:tmvlzj12@localhost/ddrawry"
 
 
 # 엔진 생성
