@@ -95,17 +95,18 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         jwt_token = jwt.encode(jwt_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
         response = JSONResponse(content={"message": "Login successful"})
-        response.set_cookie(key="jwt_token", value=jwt_token, httponly=True, max_age=3600)  # JWT 토큰 쿠키에 저장
+        response.set_cookie(key="access_token", value=jwt_token, httponly=True, max_age=3600)  # JWT 토큰 쿠키에 저장
         return response
 
+
 @router.get("/kakao/logout")
-async def kakao_logout(response: Response, jwt_token: str = Cookie(None), db: Session = Depends(get_db)):
-    if not jwt_token:
+async def kakao_logout(response: Response, access_token: str = Cookie(None), db: Session = Depends(get_db)):
+    if not access_token:
         raise HTTPException(status_code=401, detail="JWT 토큰이 없습니다.")
 
     # JWT 토큰 검증
     try:
-        payload = jwt.decode(jwt_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(access_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("user_id")
         user = db.query(User).filter(User.user_id == user_id).first()
     except (jwt.ExpiredSignatureError, jwt.JWTError):
@@ -130,22 +131,32 @@ async def kakao_logout(response: Response, jwt_token: str = Cookie(None), db: Se
             raise HTTPException(status_code=logout_response.status_code, detail="Kakao 로그아웃에 실패했습니다.")
 
         # JWT 토큰 쿠키 삭제
-        response.delete_cookie(key="jwt_token")
+        response.delete_cookie(key="access_token")
 
-        # Token 테이블에서 해당 사용자의 액세스 토큰 삭제 (선택적)
-        db.delete(token_entry)
+        # Token 테이블에서 해당 사용자의 액세스 토큰 만료 시간 기록
+        token_entry.expires_at = datetime.now()  # 로그아웃 시간을 expires_at에 설정
         db.commit()
 
         return {"message": "Kakao에서 성공적으로 로그아웃되었습니다."}
 
-async def is_token_valid(token: str) -> bool:
+    
+
+async def is_token_valid(token: str, db: Session, user_id: int) -> bool:
+    token_entry = db.query(Token).filter(Token.user_id == user_id).first()
+    
+    # Check if the token has expired
+    if token_entry and token_entry.expires_at and token_entry.expires_at <= datetime.now():
+        return False
+
+    # Validate with Kakao if the token is still valid
     token_info_url = "https://kapi.kakao.com/v1/user/access_token_info"
     headers = {"Authorization": f"Bearer {token}"}
 
     async with httpx.AsyncClient() as client:
         response = await client.get(token_info_url, headers=headers)
         return response.status_code == 200
-    
+
+
 async def refresh_access_token(refresh_token: str) -> str:
     kakao_refresh_url = "https://kauth.kakao.com/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
