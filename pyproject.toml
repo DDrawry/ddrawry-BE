@@ -13,6 +13,8 @@ alembic = "^1.13.2"
 httpx = "^0.27.2"
 python-dotenv = "^1.0.1"
 pymysql = "^1.1.1"
+jose = "^1.0.0"
+pyjwt = "^2.9.0"
 
 
 [build-system]
