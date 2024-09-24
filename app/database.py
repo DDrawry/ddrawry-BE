@@ -13,9 +13,12 @@ from typing import Generator
 
 # 의존성 주입 도구
 from fastapi import Depends
+from dotenv import load_dotenv
+import os
 
-# 데이터베이스 URL 설정
-SQLALCHEMY_DATABASE_URL = "mysql+pymysql://root:tmvlzj12@localhost/ddrawry"
+load_dotenv()
+
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 # 엔진 생성
