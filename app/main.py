@@ -24,13 +24,3 @@ app.add_middleware(
 @app.get("/")
 def read_root():
     return {"DDRAWRY": "This is ddrawry's API server"}
-
-
-@app.get("/check_cookies")
-async def check_cookies(request: Request):
-    # 요청으로 전달된 모든 쿠키를 출력
-    cookies = request.cookies
-    print("Cookies received:", cookies)
-    
-    # 쿠키 내용을 응답으로 반환
-    return {"cookies": cookies}
