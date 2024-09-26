@@ -17,7 +17,7 @@ KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
 KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
 JWT_SECRET = os.getenv("JWT_SECRET")  # JWT 비밀키
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_MINUTES = 10  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
+JWT_EXPIRATION_MINUTES = 30  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
 JWT_REFRESH_EXPIRATION_MINUTES = 60  # JWT 리프레시 토큰 유효 시간 60분
 
 
@@ -83,7 +83,7 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         # JWT 액세스 토큰 생성
         jwt_access_payload = {
             "user_id": user.user_id,
-            "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),
+            "exp": datetime.utcnow() + timedelta(seconds=JWT_EXPIRATION_MINUTES),
         }
         access_token = jwt.encode(jwt_access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -141,11 +141,12 @@ async def kakao_logout(response: Response, access_token: str = Cookie(None), db:
 
         return {"message": "Kakao에서 성공적으로 로그아웃되었습니다."}    
 
-
+from jwt import PyJWTError  # PyJWTError를 import
 @router.post("/refresh")
 async def refresh_token(request: Request):
     refresh_token = request.cookies.get("refresh_token")
-    
+    print(refresh_token)  # Refresh token 출력
+
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Missing refresh token")
 
@@ -162,17 +163,15 @@ async def refresh_token(request: Request):
         new_access_token = jwt.encode(new_access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
         # 새로운 액세스 토큰을 쿠키에 저장
-        response = Response()
+        response = JSONResponse(content={"access_token": new_access_token})  # JSON 응답 생성
         response.set_cookie(key="access_token", value=new_access_token, httponly=True, max_age=60)
 
-        return response  # 새로운 액세스 토큰 응답
+        return response  # 쿠키와 JSON 응답을 함께 반환
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Refresh token has expired")
-    except jwt.JWTError:
+    except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-
-from jwt import PyJWTError  # PyJWTError를 import
 
 def is_valid_token(token: str) -> bool:
     try:
