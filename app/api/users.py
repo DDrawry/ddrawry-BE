@@ -1,14 +1,11 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
-
+from schemas.schema import Mood, Weather, Diary, TempDiary, Settings
 
 router = APIRouter(prefix="/users")
 
 
 # /users/settings
-class Settings(BaseModel):
-    alram: bool | None = False
-    darkmode: bool | None = False
 
 
 @router.patch("/settings")
