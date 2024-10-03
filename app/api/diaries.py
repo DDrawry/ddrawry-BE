@@ -1,58 +1,45 @@
-from fastapi import APIRouter, Request, Query
-from pydantic import BaseModel
-from enum import Enum
+from fastapi import APIRouter, Request, Query, HTTPException, Depends
 from typing import List, Optional
 from fastapi.responses import JSONResponse
+from schemas.schema import Mood, Weather, Diary, TempDiary, Settings, DiaryCreate
+from sqlalchemy.orm import Session
+from app.models import Diary as DiaryModel, Image, User
+from ..database import get_db
+from datetime import datetime
+
 
 router = APIRouter(prefix="/diaries")
 
 
-class Mood(Enum):
-    NORMAL = 1
-    SAD = 2
-    SOSO = 3
-    ANGRY = 4
-    FUNNY = 5
-    HAPPY = 6
-
-
-class Weather(Enum):
-    SUN = 1
-    RAIN = 2
-    SNOW = 3
-    STORM = 4
-    CLOUD = 5
-    WIND = 6
-
-
-class Diary(BaseModel):
-    id: int | None = None
-    date: str
-    mood: Mood | str
-    weather: Weather | str
-    title: str
-    image: str | None = None
-    story: str
-
-
-class TempDiary(BaseModel):
-    id: int | None = None
-    date: str | None = None
-    mood: Mood | str | None = None
-    weather: Weather | str | None = None
-    title: str | None = None
-    image: str | None = None
-    story: str | None = None
-
-
 # /diaries
 @router.post("/")
-async def new_diary(diary: Diary):
-    print(diary)
-    # diary.mood = diary.mood.name
-    # diary.weather = diary.weather.name
-    return {"status": 201, "message": "다이어리 저장 성공", "id": 1}
+async def new_diary(diary: DiaryCreate, db: Session = Depends(get_db)):
+    
+    user = db.query(User).filter(User.user_id == 1).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
 
+    new_diary = DiaryModel(
+        user_id=user.user_id,
+        title=diary.title,
+        story=diary.story if diary.story else "",
+        weather=diary.weather,
+        mood=diary.mood,
+        date=diary.date,  # date가 없으면 None
+        nickname=diary.nickname,  # nickname이 없으면 None
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+    print(1)
+    db.add(new_diary)
+    print(new_diary.diary_id)
+    new_image = Image(
+        diary_id=new_diary.diary_id
+    )
+    db.commit()
+    db.refresh(new_diary)
+    
+    return {"status": 201, "message": "다이어리 저장 성공", "id": new_diary.diary_id}
 
 # /diaries/{id}
 @router.put("/{id}")
