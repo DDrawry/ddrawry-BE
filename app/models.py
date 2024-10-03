@@ -31,15 +31,15 @@ class Diary(Base):
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     title = Column(String(255), nullable=True)
     content = Column(Text, nullable=True)
-    weather = Column(Integer, nullable=True)
-    mood = Column(Integer, nullable=True)
-    date = Column(Date, nullable=True)  # 선택적 필드
-    nickname = Column(String(100), nullable=True)  # 선택적 필드
-    story = Column(Text, nullable=True)  # 선택적 필드
+    weather = Column(Integer, nullable=True)  # 날씨 값
+    mood = Column(Integer, nullable=True)  # 기분 값
+    date = Column(Date, nullable=True)  # 날짜
+    nickname = Column(String(100), nullable=True)  # 닉네임
+    story = Column(Text, nullable=True)  # 스토리
     created_at = Column(TIMESTAMP, nullable=True)
     updated_at = Column(TIMESTAMP, nullable=True)
-    is_deleted = Column(Boolean, nullable=True, default=False)
-    like = Column(Boolean, nullable=True, default=False)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    like = Column(Boolean, nullable=False, default=False)  # 좋아요 상태 추가
 
 
 class Image(Base):

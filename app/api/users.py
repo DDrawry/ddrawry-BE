@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
-from schemas.schema import Mood, Weather, Diary, TempDiary, Settings
+from schemas.schema import MoodEnum, WeatherEnum, Diary, TempDiary, Settings
+
 
 router = APIRouter(prefix="/users")
 

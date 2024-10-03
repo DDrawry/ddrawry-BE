@@ -1,60 +1,61 @@
 from pydantic import BaseModel
 from enum import Enum
-from typing import Optional
+from typing import Optional, Union
 from datetime import date
 
-class Mood(Enum):
-    NORMAL = 1
+class MoodEnum(int, Enum):
+    SMILE = 1
     SAD = 2
-    SOSO = 3
+    MEDIOCRE = 3
     ANGRY = 4
-    FUNNY = 5
+    EXCITED = 5
     HAPPY = 6
 
+class WeatherEnum(int, Enum):
+    SUNNY = 1
+    RAINY = 2
+    SNOWY = 3
+    STORMY = 4
+    CLOUDY = 5
+    WINDY = 6
 
-class Weather(Enum):
-    SUN = 1
-    RAIN = 2
-    SNOW = 3
-    STORM = 4
-    CLOUD = 5
-    WIND = 6
-
+# 다이어리 기본 모델
 class Diary(BaseModel):
     id: Optional[int] = None
-    user_id: int
+    user_id: Optional[int] = None
     date: date
-    mood: int
+    mood: MoodEnum  # Enum으로 변경
+    weather: WeatherEnum  # Enum으로 변경
     story: str
     title: str
-    weather: int
     nickname: str
+    like: bool = False  # 좋아요 상태 추가
 
     class Config:
-        orm_mode = True  
+        orm_mode = True  # SQLAlchemy 모델과의 호환을 위해 추가
 
-
-class TempDiary(BaseModel):
-    id: int | None = None
-    date: str | None = None
-    mood: Mood | str | None = None
-    weather: Weather | str | None = None
-    title: str | None = None
-    image: str | None = None
-    story: str | None = None
-
-class Settings(BaseModel):
-    alram: bool | None = False
-    darkmode: bool | None = False
-
+# 다이어리 생성 시 사용하는 모델
 class DiaryCreate(BaseModel):
-    date: Optional[str] = None  # 선택적 필드
-    nickname: Optional[str] = None  # 선택적 필드
-    mood: int  # 필수 필드
-    weather: int  # 필수 필드
-    title: str  # 필수 필드
-    image: Optional[str] = None  # 선택적 필드
-    story: Optional[str] = None  # 선택적 필드
+    date: Optional[str] = None  # 날짜를 str로 받음, 나중에 변환할 것
+    nickname: Optional[str] = None
+    mood: MoodEnum  # Enum으로 변경
+    weather: WeatherEnum  # Enum으로 변경
+    title: str
+    story: Optional[str] = None
+    like: Optional[bool] = False  # 생성 시에도 좋아요 상태를 받을 수 있도록 추가
 
-    class Config:
-        orm_mode = True    
+# 임시 다이어리
+class TempDiary(BaseModel):
+    id: Union[int, None] = None
+    date: Union[str, None] = None  # str 형식으로 받을 수 있게 설정
+    mood: MoodEnum  # Enum으로 변경
+    weather: WeatherEnum  # Enum으로 변경
+    title: Union[str, None] = None
+    image: Union[str, None] = None
+    story: Union[str, None] = None
+    like: Optional[bool] = False  # 좋아요 상태 추가
+
+# 사용자 설정
+class Settings(BaseModel):
+    alarm: Union[bool, None] = False
+    darkmode: Union[bool, None] = False
