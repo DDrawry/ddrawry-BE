@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Cookie, Response, Depends, Request
+from fastapi import APIRouter, HTTPException, Cookie, Response, Depends, Request, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from dotenv import load_dotenv
 import httpx
@@ -63,11 +63,11 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         kakao_id = user_info.get("id")
         nickname = user_info.get("properties", {}).get("nickname")
 
-        # DB에 사용자 정보 저장
+            # DB에 사용자 정보 저장
         user = db.query(User).filter(User.kakao_id == kakao_id).first()
         if user:
             # 기존 토큰을 삭제하지 않고 새로 추가
-            new_token = Token(user_id=user.user_id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
+            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)  # 변경된 부분
             db.add(new_token)
         else:
             user = User(kakao_id=kakao_id, nickname=nickname, created_at=datetime.now())
@@ -75,30 +75,30 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(user)
 
-            new_token = Token(user_id=user.user_id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
+            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)  # 변경된 부분
             db.add(new_token)
 
         db.commit()  # 모든 변경 사항 저장
 
         # JWT 액세스 토큰 생성
         jwt_access_payload = {
-            "user_id": user.user_id,
-            "exp": datetime.utcnow() + timedelta(seconds=JWT_EXPIRATION_MINUTES),
+            "user_id": user.id,  # 변경된 부분
+            "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),
         }
         access_token = jwt.encode(jwt_access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
         # JWT 리프레시 토큰 생성
         jwt_refresh_payload = {
-            "user_id": user.user_id,
+            "user_id": user.id,  # 변경된 부분
             "exp": datetime.utcnow() + timedelta(minutes=JWT_REFRESH_EXPIRATION_MINUTES),
         }
         refresh_token = jwt.encode(jwt_refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
 
         response = JSONResponse(content={"message": "Login successful"})
         response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=60)  # JWT 액세스 토큰 쿠키에 저장
         response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, max_age=3600 * 24 * 30)  # JWT 리프레시 토큰을 쿠키에 저장
         return response
-
 
 @router.get("/kakao/logout")
 async def kakao_logout(response: Response, access_token: str = Cookie(None), db: Session = Depends(get_db)):
@@ -109,7 +109,7 @@ async def kakao_logout(response: Response, access_token: str = Cookie(None), db:
     try:
         payload = jwt.decode(access_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("user_id")
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = db.query(User).filter(User.id == user_id).first()  # 변경된 부분
     except (jwt.ExpiredSignatureError, jwt.JWTError):
         raise HTTPException(status_code=401, detail="Invalid JWT token")
 
@@ -117,10 +117,10 @@ async def kakao_logout(response: Response, access_token: str = Cookie(None), db:
         raise HTTPException(status_code=404, detail="User not found")
 
     # Token 테이블에서 Kakao 액세스 토큰 가져오기 (가장 최근의 유효한 토큰)
-    token_entry = db.query(Token).filter(Token.user_id == user.user_id, Token.expires_at.is_(None)).order_by(Token.created_at.desc()).first()
+    token_entry = db.query(Token).filter(Token.user_id == user.id, Token.expires_at.is_(None)).order_by(Token.created_at.desc()).first()  # 변경된 부분
     if not token_entry:
         raise HTTPException(status_code=404, detail="Token not found")
-
+    
     # 카카오 로그아웃 요청
     kakao_logout_url = "https://kapi.kakao.com/v1/user/unlink"
     headers = {"Authorization": f"Bearer {token_entry.token}"}
@@ -142,10 +142,9 @@ async def kakao_logout(response: Response, access_token: str = Cookie(None), db:
         return {"message": "Kakao에서 성공적으로 로그아웃되었습니다."}    
 
 from jwt import PyJWTError  # PyJWTError를 import
-@router.post("/refresh")
+@router.get("/refresh")
 async def refresh_token(request: Request):
     refresh_token = request.cookies.get("refresh_token")
-    print(refresh_token)  # Refresh token 출력
 
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Missing refresh token")
@@ -171,6 +170,7 @@ async def refresh_token(request: Request):
         raise HTTPException(status_code=401, detail="Refresh token has expired")
     except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
 
 
 def is_valid_token(token: str) -> bool:

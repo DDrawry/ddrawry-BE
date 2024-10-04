@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import constr, BaseModel
 from enum import Enum
 from typing import Optional, Union
 from datetime import date
@@ -57,5 +57,23 @@ class TempDiary(BaseModel):
 
 # 사용자 설정
 class Settings(BaseModel):
-    alarm: Union[bool, None] = False
-    darkmode: Union[bool, None] = False
+    notification: Union[bool, None] = None
+    dark_mode: Union[bool, None] = None
+
+class DiaryCreate(BaseModel):
+    date: Optional[str] = None  # 선택적 필드
+    nickname: Optional[str] = None  # 선택적 필드
+    mood: int  # 필수 필드
+    weather: int  # 필수 필드
+    title: str  # 필수 필드
+    image: Optional[str] = None  # 선택적 필드
+    story: Optional[str] = None  # 선택적 필드
+
+    class Config:
+        orm_mode = True    
+
+class NicknameUpdate(BaseModel):
+    nickname: str = constr(min_length=1, max_length=100)  # 1자 이상, 100자 이하로 제한
+    
+    class Config:
+        orm_mode = True  # ORM 호환 모드 활성화
