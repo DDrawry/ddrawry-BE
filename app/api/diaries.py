@@ -189,6 +189,107 @@ async def save_temp(id: int, diary: TempDiarySchema, db: Session = Depends(get_d
     }
 
 
+
+# /diaries/like/{id}
+@router.put("/like/{id}")
+async def like_diary(id: int, db: Session = Depends(get_db)):
+    diary = db.query(DiaryModel).filter(DiaryModel.id == id).first()
+    if not diary:
+        raise HTTPException(status_code=404, detail="Diary not found")
+    
+    # 좋아요 상태를 토글
+    diary.like = not diary.like
+    db.commit()
+    
+    return {
+        "status": 200,
+        "id": id,
+        "bookmark": diary.like
+    }
+
+
+# 전체/월별
+# /diaries/like 
+# 좋아요를 누른 다이어리들 조회 API
+@router.get("/like")
+async def get_like_diaries(type: str, date: str = None, db: Session = Depends(get_db)): 
+    if type == "month" and date and len(date) == 6:
+        year = int(date[:4])
+        month = int(date[4:])
+        
+        # 로그 추가
+        print(f"Querying for year: {year}, month: {month}")
+
+        # 해당 연도와 월에 해당하는 좋아요 누른 다이어리를 조회
+        liked_diaries = db.query(DiaryModel).filter(
+            DiaryModel.like == True,
+            DiaryModel.date.between(f"{year}-{month:02d}-01", f"{year}-{month:02d}-30")  # 30일까지 확인
+        ).all()
+    
+        if not liked_diaries:
+            raise HTTPException(status_code=404, detail="해당 월에 좋아요를 누른 다이어리가 없습니다.")
+    
+        # 다이어리 정보를 반환할 형식으로 변환
+        result = []
+        for diary in liked_diaries:
+            # 이미지 URL 가져오기 (하나만 가져오기)
+            image = db.query(Image).filter(
+                Image.diary_id == diary.id,
+                Image.is_active == True,
+                Image.is_deleted == False
+            ).first()  # 첫 번째 결과만 가져오기
+
+            # 이미지 URL이 없으면 None으로 설정
+            image_url = image.image_url if image else None
+
+            result.append({
+                "id": diary.id,
+                "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 형식 변환
+                "title": diary.title,
+                "image": image_url,  # 단일 이미지 URL 또는 None
+                "bookmark": 1 if diary.like else 0  # 좋아요 상태를 int(1 또는 0)로 반환
+            })
+        
+        return {
+            "status": 200,
+            "message": f"{year}년 {month}월 좋아요 누른 일기 조회 완료",
+            "data": result,
+        }
+    elif type == "all":
+        # 모든 좋아요를 누른 다이어리를 날짜순으로 조회
+        liked_diaries = db.query(DiaryModel).filter(DiaryModel.like == True).order_by(DiaryModel.date).all()
+
+        if not liked_diaries:
+            raise HTTPException(status_code=404, detail="좋아요를 누른 다이어리가 없습니다.")
+        
+        result = []
+        for diary in liked_diaries:
+            # 이미지 URL 가져오기 (하나만 가져오기)
+            image = db.query(Image).filter(
+                Image.diary_id == diary.id,
+                Image.is_active == True,
+                Image.is_deleted == False
+            ).first()  # 첫 번째 결과만 가져오기
+
+            # 이미지 URL이 없으면 None으로 설정
+            image_url = image.image_url if image else None
+
+            result.append({
+                "id": diary.id,
+                "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 형식 변환
+                "title": diary.title,
+                "image": image_url,  # 단일 이미지 URL 또는 None
+                "bookmark": 1 if diary.like else 0  # 좋아요 상태를 int(1 또는 0)로 반환
+            })
+        
+        return {
+            "status": 200,
+            "message": "모든 좋아요를 누른 일기 조회 완료",
+            "data": result,
+    }
+
+
+
 # /diaries/{id}?edit={bool}
 # edit 생략 가능
 @router.get("/{id}")
@@ -231,51 +332,6 @@ async def get_diary(id: int, edit: bool = None):
             "story": "아침에 쿨쿨자고 ,,,,",
         },
     }
-
-# /diaries/like/{id}
-@router.put("/like/{id}")
-async def like_diary(id: int, db: Session = Depends(get_db)):
-    diary = db.query(DiaryModel).filter(DiaryModel.id == id).first()
-    if not diary:
-        raise HTTPException(status_code=404, detail="Diary not found")
-    
-    # 좋아요 상태를 토글
-    diary.like = not diary.like
-    db.commit()
-    
-    return {
-        "status": 200,
-        "id": id,
-        "bookmark": diary.like
-    }
-# 전체/월별
-# /diaries/like 
-# 좋아요를 누른 다이어리들 조회 API
-# @router.get("/like")
-# async def get_like_diaries(db: Session = Depends(get_db)): 
-#     # 좋아요를 누른 다이어리 조회
-#     liked_diaries = db.query(DiaryModel).filter(DiaryModel.like == True).all()
-    
-#     if not liked_diaries:
-#         raise HTTPException(status_code=404, detail="좋아요를 누른 다이어리가 없습니다.")
-    
-#     # 다이어리 정보를 반환
-#     result = []
-#     for diary in liked_diaries:
-#         result.append({
-#             "id": diary.id,
-#             "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 형식 변환
-#             "title": diary.title,
-#             "image": diary.image,  # 이미지 URL 또는 데이터
-#             "bookmark": 1 if diary.like else 0  # 좋아요 상태를 int(1 또는 0)로 반환
-#         })
-    
-#     return {
-#         "status": 200,
-#         "message": "좋아요 누른 일기 조회 완료",
-#         "data": result,
-#     }
-
 
 # /diaries/search/{keyword}
 @router.get("/search/{keyword}")
