@@ -45,15 +45,16 @@ class DiaryCreate(BaseModel):
     like: Optional[bool] = False  # 생성 시에도 좋아요 상태를 받을 수 있도록 추가
 
 # 임시 다이어리
-class TempDiary(BaseModel):
-    id: Union[int, None] = None
-    date: Union[str, None] = None  # str 형식으로 받을 수 있게 설정
-    mood: MoodEnum  # Enum으로 변경
-    weather: WeatherEnum  # Enum으로 변경
-    title: Union[str, None] = None
-    image: Union[str, None] = None
-    story: Union[str, None] = None
-    like: Optional[bool] = False  # 좋아요 상태 추가
+class TempDiarySchema(BaseModel):
+    title: str
+    weather: Optional[int] = None
+    mood: Optional[int] = None
+    date: date
+    nickname: str
+    story: str
+
+    class Config:
+        orm_mode = True
 
 # 사용자 설정
 class Settings(BaseModel):

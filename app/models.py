@@ -30,17 +30,33 @@ class Diary(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     title = Column(String(255), nullable=True)
-    content = Column(Text, nullable=True)
-    weather = Column(Integer, nullable=True)  # 날씨 값
-    mood = Column(Integer, nullable=True)  # 기분 값
-    date = Column(Date, nullable=True)  # 날짜
-    nickname = Column(String(100), nullable=True)  # 닉네임
-    story = Column(Text, nullable=True)  # 스토리
+    weather = Column(Integer, nullable=True)  
+    mood = Column(Integer, nullable=True)  
+    date = Column(Date, nullable=True)
+    nickname = Column(String(100), nullable=True)
+    story = Column(Text, nullable=True)
     created_at = Column(TIMESTAMP, nullable=True)
     updated_at = Column(TIMESTAMP, nullable=True)
     is_deleted = Column(Boolean, nullable=False, default=False)
-    like = Column(Boolean, nullable=False, default=False)  # 좋아요 상태 추가
+    like = Column(Boolean, nullable=False, default=False)
 
+from datetime import datetime, timezone
+class TempDiary(Base):
+    __tablename__ = 'temp_diary'
+
+    id = Column(Integer, primary_key=True)
+    diary_id = Column(Integer, ForeignKey('diary.id'), nullable=True)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)  # 필수값
+    title = Column(String(255), nullable=True)
+    weather = Column(Integer, nullable=True)
+    mood = Column(Integer, nullable=True)
+    date = Column(Date, nullable=True)  
+    nickname = Column(String(100), nullable=True)  
+    story = Column(Text, nullable=True)  
+    created_at = Column(TIMESTAMP, nullable=True, default=datetime.now(timezone.utc))
+    updated_at = Column(TIMESTAMP, nullable=True, onupdate=datetime.now(timezone.utc))
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    like = Column(Boolean, nullable=False, default=False)
 
 class Image(Base):
     __tablename__ = 'image'
@@ -76,19 +92,6 @@ class Setting(Base):
     updated_at = Column(TIMESTAMP, nullable=True)
 
 
-class TempDiary(Base):
-    __tablename__ = 'temp_diary'
-    
-    id = Column(Integer, primary_key=True)
-    diary_id = Column(Integer, ForeignKey('diary.id'), nullable=False)
-    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
-    title = Column(String(255), nullable=True)
-    content = Column(Text, nullable=True)
-    weather = Column(String(50), nullable=True)
-    mood = Column(String(50), nullable=True)
-    created_at = Column(TIMESTAMP, nullable=True)
-    updated_at = Column(TIMESTAMP, nullable=True)
-    is_deleted = Column(Boolean, nullable=True, default=False)
 
 
 class Prompt(Base):
