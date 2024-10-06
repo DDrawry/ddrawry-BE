@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Request, Query, HTTPException, Depends
 from typing import List, Optional
 from fastapi.responses import JSONResponse
-from schemas.schema import MoodEnum, WeatherEnum, Diary, TempDiary, Settings, DiaryCreate
+from schemas.schema import MoodEnum, WeatherEnum, Diary, TempDiarySchema, Settings, DiaryCreate
 from sqlalchemy.orm import Session
-from app.models import Diary as DiaryModel, Image, User
+from app.models import Diary as DiaryModel, Image, User, TempDiary
 from ..database import get_db
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 router = APIRouter(prefix="/diaries")
@@ -77,7 +77,7 @@ async def edit_diary(id: int, diary: Diary, db: Session = Depends(get_db)):
     existing_diary.weather = diary.weather
     existing_diary.date = diary.date
     existing_diary.nickname = diary.nickname
-    existing_diary.updated_at = datetime.utcnow()  # 수정된 시간 업데이트
+    existing_diary.updated_at = datetime.now(timezone.utc)# 수정된 시간 업데이트
 
     # 변경사항을 DB에 커밋
     db.commit()
@@ -143,11 +143,50 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db)):
         "data": {"date": formatted_date, "is_exist": False, "id": None},
     }
 
+# /diaries/temp
+@router.post("/temp")
+async def create_temp_diary(diary: TempDiarySchema, user_id: int, db: Session = Depends(get_db)):
+    new_temp_diary = TempDiary(**diary.dict(), user_id=user_id)
+    db.add(new_temp_diary)
+    db.commit()
+    db.refresh(new_temp_diary)
+    return new_temp_diary
+
+# /diaries/temp/{id}
+@router.get("/temp/{id}")
+async def get_temp_diary(id: int, db: Session = Depends(get_db)):
+    temp_diary = db.query(TempDiary).filter(TempDiary.id == id).first()
+    if not temp_diary:
+        raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
+    return temp_diary
 
 # /diaries/temp/{id}
 @router.put("/temp/{id}")
-async def save_temp(id: int, diary: TempDiary):
-    return {"status": 200, "message": "다이어리 임시 저장 성공", "temp_id": id}
+async def save_temp(id: int, diary: TempDiarySchema, db: Session = Depends(get_db)):
+    # 이미 존재하는 temp_diary가 있는지 확인
+    existing_temp_diary = db.query(TempDiary).filter(TempDiary.id == id).first()
+
+    # 존재하지 않는다면 404 에러를 발생시킴
+    if not existing_temp_diary:
+        raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
+    
+    # 임시 다이어리 수정
+    existing_temp_diary.title = diary.title
+    existing_temp_diary.story = diary.story
+    existing_temp_diary.weather = diary.weather
+    existing_temp_diary.mood = diary.mood
+    existing_temp_diary.date = diary.date
+    existing_temp_diary.nickname = diary.nickname
+    existing_temp_diary.updated_at = datetime.now(timezone.utc)  # 수정된 시간 기록
+
+    # 변경사항을 DB에 커밋
+    db.commit()
+
+    return {
+        "status": 200,
+        "message": "다이어리 임시 저장 성공",
+        "temp_id": existing_temp_diary.id
+    }
 
 
 # /diaries/{id}?edit={bool}
@@ -209,11 +248,11 @@ async def like_diary(id: int, db: Session = Depends(get_db)):
         "id": id,
         "bookmark": diary.like
     }
-
-# /diaries/like
+# 전체/월별
+# /diaries/like 
 # 좋아요를 누른 다이어리들 조회 API
 # @router.get("/like")
-# async def get_like_diaries(db: Session = Depends(get_db)):
+# async def get_like_diaries(db: Session = Depends(get_db)): 
 #     # 좋아요를 누른 다이어리 조회
 #     liked_diaries = db.query(DiaryModel).filter(DiaryModel.like == True).all()
     
