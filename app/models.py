@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, Date, String, ForeignKey, TIMESTAMP, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
-
+from datetime import datetime, timezone
 Base = declarative_base()
 
 class User(Base):
@@ -40,7 +40,7 @@ class Diary(Base):
     is_deleted = Column(Boolean, nullable=False, default=False)
     like = Column(Boolean, nullable=False, default=False)
 
-from datetime import datetime, timezone
+
 class TempDiary(Base):
     __tablename__ = 'temp_diary'
 
@@ -55,8 +55,8 @@ class TempDiary(Base):
     story = Column(Text, nullable=True)  
     created_at = Column(TIMESTAMP, nullable=True, default=datetime.now(timezone.utc))
     updated_at = Column(TIMESTAMP, nullable=True, onupdate=datetime.now(timezone.utc))
-    is_deleted = Column(Boolean, nullable=False, default=False)
     like = Column(Boolean, nullable=False, default=False)
+    status = Column(Boolean, nullable=False, default=False)
 
 class Image(Base):
     __tablename__ = 'image'
