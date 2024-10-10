@@ -24,15 +24,16 @@ class Diary(BaseModel):
     id: Optional[int] = None
     user_id: Optional[int] = None
     date: date
-    mood: MoodEnum  # Enum으로 변경
-    weather: WeatherEnum  # Enum으로 변경
-    story: str
+    mood: MoodEnum
+    weather: WeatherEnum
     title: str
+    story: str
     nickname: str
-    like: bool = False  # 좋아요 상태 추가
+    like: bool = False
+    image_url: Optional[str] = None  # 이미지 URL 필드 추가
 
     class Config:
-        orm_mode = True  # SQLAlchemy 모델과의 호환을 위해 추가
+        orm_mode = True
 
 # 다이어리 생성 시 사용하는 모델
 class DiaryCreate(BaseModel):
@@ -52,6 +53,7 @@ class TempDiarySchema(BaseModel):
     date: date
     nickname: str
     story: str
+    image_url: Optional[str] = None  # 이미지 필드 추가
 
     class Config:
         orm_mode = True
