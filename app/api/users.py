@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Cookie, Response, Depends, Request, Query
-from .utils import get_current_user_id
+from ..utils import get_current_user_id
 from schemas.schema import Settings, NicknameUpdate
 from ..models import Setting, User
 from app.database import get_db  # DB 세션을 가져오는 함수를 import합니다.
