@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Request, Query, HTTPException, Depends
 from typing import List, Optional
 from fastapi.responses import JSONResponse
-from schemas.schema import MoodEnum, WeatherEnum, Diary, TempDiarySchema, Settings, DiaryCreate
+from schemas.schema import MoodEnum, WeatherEnum, Diary, TempDiarySchema, Settings, DiaryCreate, StatusUpdateRequest
 from sqlalchemy.orm import Session
 from app.models import Diary as DiaryModel, Image, User, TempDiary
+from ..utils import get_current_user_id
 from ..database import get_db
 from datetime import datetime, timezone
 
@@ -37,7 +38,10 @@ async def new_diary(diary: DiaryCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_diary)
     
-    return {"status": 201, "message": "다이어리 저장 성공", "id": new_diary.id}
+    return {"status": 201,
+            "message": "다이어리 저장 성공",
+            "data": {"id": new_diary.id}
+        }
 
 @router.get("/diary/{diary_id}")
 async def get_diary(diary_id: int, db: Session = Depends(get_db)):
@@ -118,29 +122,93 @@ async def delete_diary(id: int, db: Session = Depends(get_db)):
         "id": id
     }
 
-# /diaries?date
+
 @router.get("/")
-async def search_diary_exist(date: int, db: Session = Depends(get_db)):
-    # 쿼리 파라미터로 받은 date를 'YYYYMMDD' 형식에서 'YYYY-MM-DD' 형식으로 변환
+async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    # 'YYYYMMDD' 형식을 'YYYY-MM-DD' 형식으로 변환
     try:
         formatted_date = datetime.strptime(str(date), "%Y%m%d").date()
     except ValueError:
         raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다. YYYYMMDD 형식을 사용하세요.")
     
-    # 해당 날짜에 작성된 다이어리 조회
-    diary = db.query(DiaryModel).filter(DiaryModel.date == formatted_date).first()
-    
+    # diary에서 해당 날짜와 user_id로 조회
+    diary = db.query(DiaryModel).filter(
+        DiaryModel.date == formatted_date,
+        DiaryModel.user_id == user_id,
+        DiaryModel.is_deleted == False
+    ).first()
+
+    # user_id로 사용자 nickname 조회
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    # diary가 존재할 경우
     if diary:
         return {
             "status": 200,
             "message": "작성한 다이어리가 존재합니다.",
-            "data": {"date": formatted_date, "is_exist": True, "id": diary.id},
+            "is_exist": True,
+            "data": {
+                "date": formatted_date,
+                "diary_id": diary.id,
+                "title": diary.title,
+                "weather": diary.weather,
+                "mood": diary.mood,
+                "nickname": user.nickname,
+                "story": diary.story,
+                "like": diary.like,
+            },
         }
+
+    # temp_diary에서 해당 날짜와 user_id로 조회
+    temp_diary = db.query(TempDiary).filter(
+        TempDiary.date == formatted_date,
+        TempDiary.user_id == user_id,
+        TempDiary.status == 0
+    ).first()
+
+    # temp_diary가 존재할 경우
+    if temp_diary:
+        return {
+            "status": 200,
+            "message": "임시 다이어리가 이미 존재합니다.",
+            "is_exist": False,
+            "temp_data": {
+                "temp_diary_id": temp_diary.id,
+                "title": temp_diary.title,
+                "weather": temp_diary.weather,
+                "mood": temp_diary.mood,
+                "nickname": user.nickname,
+                "story": temp_diary.story,
+            }
+        }
+
+    # 다이어리와 temp_diary 모두 존재하지 않을 경우 새로운 temp_diary 생성
+    new_temp_diary = TempDiary(
+        user_id=user_id,
+        date=formatted_date,
+        title=None,
+        weather=None,
+        mood=None,
+        nickname=user.nickname,
+        story=None
+    )
     
+    db.add(new_temp_diary)
+    db.commit()
+    db.refresh(new_temp_diary)
+
+    # 임시 다이어리 생성 시 temp_id만 반환
     return {
         "status": 200,
-        "message": "작성한 다이어리가 존재하지 않습니다.",
-        "data": {"date": formatted_date, "is_exist": False, "id": None},
+        "message": "임시 다이어리가 존재하지 않아 새로 생성되었습니다.",
+        "is_exist": False,
+        "data": {
+            "date": formatted_date,
+            "temp_id": new_temp_diary.id
+        }
     }
 
 # /diaries/temp
@@ -185,12 +253,13 @@ async def save_temp(id: int, diary: TempDiarySchema, db: Session = Depends(get_d
     return {
         "status": 200,
         "message": "다이어리 임시 저장 성공",
-        "temp_id": existing_temp_diary.id
+        "data": {
+            "temp_id": existing_temp_diary.id
+        }
     }
 
 
 
-# /diaries/like/{id}
 @router.put("/like/{id}")
 async def like_diary(id: int, db: Session = Depends(get_db)):
     diary = db.query(DiaryModel).filter(DiaryModel.id == id).first()
@@ -201,11 +270,26 @@ async def like_diary(id: int, db: Session = Depends(get_db)):
     diary.like = not diary.like
     db.commit()
     
-    return {
-        "status": 200,
-        "id": id,
-        "bookmark": diary.like
-    }
+    # 좋아요 상태에 따라 메시지 변경
+    if diary.like:
+        return {
+            "status": 200,
+            "message": "좋아요 등록이 성공하였습니다.",
+            "data": {
+                "id": id,
+                "bookmark": diary.like
+            }
+        }
+    else:
+        return {
+            "status": 200,
+            "message": "좋아요 등록이 실패하였습니다.",
+            "data": {
+                "id": id,
+                "bookmark": diary.like
+            }
+        }
+
 
 
 # 전체/월별
@@ -290,47 +374,70 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
 
 
 
-# /diaries/{id}?edit={bool}
-# edit 생략 가능
 @router.get("/{id}")
-async def get_diary(id: int, edit: bool = None):
-    # id가 999인 경우 존재하지 않는 다이어리
-    if id == 999:
-        return {
-            "status": 404,
-            "message": f"id가 {id}인 다이어리가 존재하지 않음",
-        }
+async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db)):
+    # 1. 다이어리를 조회
+    diary = db.query(DiaryModel).filter(DiaryModel.id == id).first()
+    
+    if not diary:
+        raise HTTPException(status_code=404, detail=f"{id}번 다이어리를 찾을 수 없습니다.")
+    
+    image = db.query(Image).filter(
+        Image.diary_id == diary.id,
+        Image.is_active == True,
+        Image.is_deleted == False
+    ).first()  # 첫 번째 결과만 가져오기
 
-    # edit 이 True 경우 수정 중인 것으로 리턴
-    if edit:
+    # 이미지 URL이 없으면 None으로 설정
+    image_url = image.image_url if image else None
+
+    # 2. edit 파라미터가 없거나 false일 때는 다이어리만 반환
+    if not edit:
         return {
             "status": 200,
-            "message": f"{id}번 다이어리 수정 준비 완료",
+            "message": f"{id}번 다이어리 조회 완료",
             "data": {
-                "id": 1,
-                "date": "2024-08-13",
-                "nickname": "팡팡이",
-                "mood": 1,
-                "weather": 3,
-                "title": "신나는 산책을 했따",
-                "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...AYH/",
-                "story": "아침에 쿨쿨자고 ,,,,",
-            },
-            "temp_id": 55,
+                "id": diary.id,
+                "date": diary.date,
+                "nickname": diary.nickname,
+                "mood": diary.mood,
+                "weather": diary.weather,
+                "title": diary.title,
+                "image": image_url,
+                "story": diary.story
+            }
         }
+    
+    # 3. edit=true일 경우, 임시 다이어리 생성
+    temp_diary = TempDiary(
+        diary_id=diary.id,
+        date=diary.date,
+        nickname=diary.nickname,
+        mood=diary.mood,
+        weather=diary.weather,
+        title=diary.title,
+        image=image_url,
+        story=diary.story
+    )
+    db.add(temp_diary)
+    db.commit()
+    db.refresh(temp_diary)
+
+    # 4. 임시 다이어리의 temp_id와 함께 응답
     return {
         "status": 200,
-        "message": f"{id}번 다이어리 조회 완료",
+        "message": f"{id}번 다이어리 수정 준비 완료",
         "data": {
-            "id": 1,
-            "date": 20240813,
-            "nickname": "팡팡이",
-            "mood": 1,
-            "weather": 3,
-            "title": "신나는 산책을 했따",
-            "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...AYH/",
-            "story": "아침에 쿨쿨자고 ,,,,",
+            "id": diary.id,
+            "date": diary.date,
+            "nickname": diary.nickname,
+            "mood": diary.mood,
+            "weather": diary.weather,
+            "title": diary.title,
+            "image": image_url,
+            "story": diary.story
         },
+        "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
     }
 
 # /diaries/search/{keyword}
@@ -400,3 +507,67 @@ diaries_list = [
         "bookmark": False
     }
 ]
+
+@router.post("/cancel")
+async def update_temp_diary_status(
+    request: StatusUpdateRequest,  # 요청 바디로 StatusUpdateRequest 사용
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)  # 현재 사용자의 user_id 가져오기
+):
+    # date 값을 'YYYY-MM-DD' 형식으로 변환
+    try:
+        formatted_date = datetime.strptime(request.date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다. YYYY-MM-DD 형식을 사용하세요.")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    # user_id와 date가 일치하는 temp_diary 찾기
+    temp_diary = db.query(TempDiary).filter(
+        TempDiary.user_id == user_id,
+        TempDiary.date == formatted_date
+    ).first()
+
+    if not temp_diary:
+        raise HTTPException(status_code=404, detail="해당 날짜에 temp_diary가 존재하지 않습니다.")
+
+    type = request.type  # 요청 바디에서 type 필드 가져오기
+
+    if type == "write":
+        # 상태를 True로 업데이트
+        temp_diary.status = True
+        temp_diary.updated_at = datetime.now()  # updated_at 필드 업데이트
+        db.commit()
+        
+        return {
+            "status": 200,
+            "message": "상태가 업데이트되었습니다.",
+            "data": {"temp_id": temp_diary.id}
+        }
+
+    elif type == "main":
+        
+        temp_diary.status = True
+        temp_diary.updated_at = datetime.now()  # updated_at 필드 업데이트
+        db.commit()  # 변경 사항 저장
+
+        # 새로운 TempDiary 생성
+        new_temp_diary = TempDiary(
+            user_id=user_id,
+            date=formatted_date,
+            title=None,
+            weather=None,
+            mood=None,
+            nickname=user.nickname,  # 여기에 적절한 nickname을 추가하세요
+            story=None,
+            status=False  # status를 True로 설정
+        )
+        
+        db.add(new_temp_diary)
+        db.commit()
+        db.refresh(new_temp_diary)  # 새로 생성된 diary의 id를 가져옴
+        
+        return {
+            "status": 201,
+            "message": "새로운 임시 다이어리가 생성되었습니다.",
+            "data": {"temp_id": new_temp_diary.id}
+        }
