@@ -11,6 +11,7 @@ class User(Base):
     nickname = Column(String(100), nullable=True)
     created_at = Column(TIMESTAMP, nullable=True)
     updated_at = Column(TIMESTAMP, nullable=True)
+    delete_at = Column(TIMESTAMP, nullable=True)
     last_login = Column(TIMESTAMP, nullable=True)
 
 
@@ -23,20 +24,20 @@ class Token(Base):
     created_at = Column(TIMESTAMP, nullable=True)
     expires_at = Column(TIMESTAMP, nullable=True)
 
-
+from sqlalchemy.sql import func
 class Diary(Base):
     __tablename__ = 'diary'
     
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     title = Column(String(255), nullable=True)
-    weather = Column(Integer, nullable=True)  
-    mood = Column(Integer, nullable=True)  
+    weather = Column(Integer, nullable=True)
+    mood = Column(Integer, nullable=True)
     date = Column(Date, nullable=True)
     nickname = Column(String(100), nullable=True)
     story = Column(Text, nullable=True)
-    created_at = Column(TIMESTAMP, nullable=True)
-    updated_at = Column(TIMESTAMP, nullable=True)
+    created_at = Column(TIMESTAMP, nullable=True, default=func.now())  # 기본값 추가
+    updated_at = Column(TIMESTAMP, nullable=True, onupdate=func.now())  # 업데이트 시 시간 변경
     is_deleted = Column(Boolean, nullable=False, default=False)
     like = Column(Boolean, nullable=False, default=False)
 

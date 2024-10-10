@@ -7,7 +7,7 @@ from app.models import Diary as DiaryModel, Image, User, TempDiary
 from ..utils import get_current_user_id
 from ..database import get_db
 from datetime import datetime, timezone
-
+from sqlalchemy import func
 
 router = APIRouter(prefix="/diaries")
 
@@ -211,22 +211,22 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
         }
     }
 
-# /diaries/temp
-@router.post("/temp")
-async def create_temp_diary(diary: TempDiarySchema, user_id: int, db: Session = Depends(get_db)):
-    new_temp_diary = TempDiary(**diary.dict(), user_id=user_id)
-    db.add(new_temp_diary)
-    db.commit()
-    db.refresh(new_temp_diary)
-    return new_temp_diary
+# # /diaries/temp
+# @router.post("/temp")
+# async def create_temp_diary(diary: TempDiarySchema, user_id: int, db: Session = Depends(get_db)):
+#     new_temp_diary = TempDiary(**diary.dict(), user_id=user_id)
+#     db.add(new_temp_diary)
+#     db.commit()
+#     db.refresh(new_temp_diary)
+#     return new_temp_diary
 
-# /diaries/temp/{id}
-@router.get("/temp/{id}")
-async def get_temp_diary(id: int, db: Session = Depends(get_db)):
-    temp_diary = db.query(TempDiary).filter(TempDiary.id == id).first()
-    if not temp_diary:
-        raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
-    return temp_diary
+# # /diaries/temp/{id}
+# @router.get("/temp/{id}")
+# async def get_temp_diary(id: int, db: Session = Depends(get_db)):
+#     temp_diary = db.query(TempDiary).filter(TempDiary.id == id).first()
+#     if not temp_diary:
+#         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
+#     return temp_diary
 
 # /diaries/temp/{id}
 @router.put("/temp/{id}")
@@ -442,71 +442,106 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
 
 # /diaries/search/{keyword}
 @router.get("/search/{keyword}")
-async def search_diary(keyword: str = ""):
+async def search_diary(keyword: str, db: Session = Depends(get_db)):
     if keyword == "":
-        return {"status": 200, "message": "모든 다이어리 조회"}
+        diaries = db.query(DiaryModel).all()
+        return {
+            "status": 200,
+            "message": "모든 다이어리 조회 완료",
+            "data": diaries,
+        }
+    
+    # 키워드
+    diaries = db.query(DiaryModel).filter(
+        (DiaryModel.title.like(f"%{keyword}%")) |  
+        (DiaryModel.story.like(f"%{keyword}%")) &  
+        (DiaryModel.is_deleted == False)           # 삭제되지 않은 항목만
+    ).all()
+    
+    if not diaries:
+        return {
+            "status": 404,
+            "message": f"'{keyword}'에 대한 검색 결과가 없습니다."
+        }
+    
+    results = []
+    for diary in diaries:
+        # diary에 연결된 이미지 가져오기
+        image = db.query(Image).filter(Image.diary_id == diary.id, Image.is_active == True).first()
+        image_url = image.image_url if image else None  # 이미지가 있으면 URL, 없으면 None
 
-    if keyword == "999":
-        return {"status": 404, "message": "해당 키워드로 검색이 되지 않았습니다."}
-
+        results.append({
+            "id": diary.id,
+            "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 포맷
+            "title": diary.title,
+            "image": image_url,
+            "bookmark": diary.like,
+        })
+    
     return {
         "status": 200,
-        "message": f"{keyword}에 관한 일기 조회 완료",
-        "data": [
-            {
-                "id": 1,
-                "date": "2024-08-13",
-                "title": f"신나는 {keyword}을 했따",
-                "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...AYH/",
-                "bookmark": 1,
-            },
-            {
-                "id": 3,
-                "date": "2024-08-20",
-                "title": f"{keyword} 가기 싫다",
-                "image": "띠로리_로고.jpg",
-                "bookmark": 0,
-            },
-        ],
+        "message": f"'{keyword}'에 관한 다이어리 조회 완료",
+        "data": results,
     }
 
 # /diaries/main?type=calender&date=202406
 @router.get("/main")
-async def get_main_diaries(type: str = Query(..., description="조회 유형 (list 또는 calender)"),
-                           date: str = Query(..., description="조회할 년월 (예: 202408)")):
-    calendar_data = [
-        {
-            "id": diary["id"],
-            "date": diary["date"],
-            "image": diary["image"],
-            "bookmark": diary["bookmark"]
+async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
+    year = date[:4]
+    month = date[4:]
+
+    # 해당 연도와 월의 다이어리 조회
+    diaries = db.query(DiaryModel).filter(
+        func.strftime("%Y", DiaryModel.date) == year,
+        func.strftime("%m", DiaryModel.date) == month,
+        DiaryModel.is_deleted == False
+    ).all()
+
+    # 다이어리가 없는 경우
+    if not diaries:
+        return {
+            "status": 404,
+            "message": f"{year}-{month}에 해당하는 다이어리가 없습니다."
         }
-        for diary in diaries_list
-    ]
 
-    return JSONResponse(content={
+    # 캘린더형 조회 (title 없이)
+    if type == "calender":
+        result = [
+            {
+                "id": diary.id,
+                "date": diary.date.strftime("%Y-%m-%d"),
+                "image": diary.image_path if diary.image_path else "띠로리로고",  # 이미지가 없으면 기본 이미지 사용
+                "bookmark": diary.like
+            }
+            for diary in diaries
+        ]
+
+    # 목록형 조회 (title 포함)
+    elif type == "list":
+        result = [
+            {
+                "id": diary.id,
+                "date": diary.date.strftime("%Y-%m-%d"),
+                "title": diary.title,
+                "image": diary.image_path if diary.image_path else "띠로리로고",  # 이미지가 없으면 기본 이미지 사용
+                "bookmark": diary.like
+            }
+            for diary in diaries
+        ]
+
+    else:
+        return {
+            "status": 400,
+            "message": "잘못된 type 값입니다. 'list' 또는 'calender'를 사용하세요."
+        }
+
+    return {
         "status": 200,
-        "message": "다이어리 목록형 조회 완료",
-        "data": calendar_data
-    })
-
-# 더미
-diaries_list = [
-    {
-        "id": 1,
-        "date": "2024-08-13",
-        "title": "신나는 산책을 했따",
-        "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...AYH/",
-        "bookmark": True
-    },
-    {
-        "id": 2,
-        "date": "2024-08-19",
-        "title": "냠냠 맛있는거 먹기",
-        "image": None,  # 이미지가 없는 경우
-        "bookmark": False
+        "message": f"{year}-{month}에 대한 메인 페이지 조회 완료",
+        "data": result
     }
-]
+
+
 
 @router.post("/cancel")
 async def update_temp_diary_status(
