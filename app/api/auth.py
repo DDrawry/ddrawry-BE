@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.models import User, Token  # User와 Token 모델 import
 from app.database import get_db  # DB 세션을 가져오는 함수를 import합니다.
+from app.utils import get_current_user_id
 
 router = APIRouter(prefix="/auth")
 
@@ -17,7 +18,7 @@ KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
 KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
 JWT_SECRET = os.getenv("JWT_SECRET")  # JWT 비밀키
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_MINUTES = 30  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
+JWT_EXPIRATION_MINUTES = 300  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
 JWT_REFRESH_EXPIRATION_MINUTES = 60  # JWT 리프레시 토큰 유효 시간 60분
 
 
@@ -170,6 +171,36 @@ async def refresh_token(request: Request):
         raise HTTPException(status_code=401, detail="Refresh token has expired")
     except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+
+
+@router.delete("/", response_model=dict)
+async def delete_user(
+    user_id: int = Depends(get_current_user_id),  # 현재 사용자의 user_id 가져오기
+    db: Session = Depends(get_db)
+):
+    # 1. User 찾기
+    user = db.query(User).filter(User.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # 2. delete_at 필드를 현재 시각으로 업데이트
+    user.delete_at = datetime.now()
+    
+    # 3. 해당 유저와 연결된 Token의 expire_at 업데이트 (예: 1시간 후로 설정)
+    tokens = db.query(Token).filter(Token.user_id == user_id).all()
+    for token in tokens:
+        token.expires_at = datetime.now()  # expire_at을 1시간 후로 설정
+    
+    # 4. 변경 사항 저장
+    db.commit()
+    
+    return {"status": 200, 
+            "message": "유저 데이터가 삭제되었습니다.", 
+            "data": {
+                "id": user_id,        
+        }}
 
 
 
