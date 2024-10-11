@@ -391,7 +391,7 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
 
 
 
-@router.get("/{id}")
+@router.get("/diary/{id}")
 async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db)):
     # 1. 다이어리를 조회
     diary = db.query(DiaryModel).filter(DiaryModel.id == id).first()
@@ -502,19 +502,21 @@ async def search_diary(keyword: str, db: Session = Depends(get_db)):
     }
 
 # /diaries/main?type=calender&date=202406
+from sqlalchemy.orm import joinedload
+
 @router.get("/main")
 async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
     year = date[:4]
     month = date[4:]
 
-    # 해당 연도와 월의 다이어리 조회
-    diaries = db.query(DiaryModel).filter(
-        func.strftime("%Y", DiaryModel.date) == year,
-        func.strftime("%m", DiaryModel.date) == month,
+    # MySQL에서 연도와 월을 추출하기 위한 DATE_FORMAT 사용
+    diaries = db.query(DiaryModel).options(joinedload(DiaryModel.images)).filter(
+        func.DATE_FORMAT(DiaryModel.date, "%Y") == year,
+        func.DATE_FORMAT(DiaryModel.date, "%m") == month,
         DiaryModel.is_deleted == False
     ).all()
 
-    # 다이어리가 없는 경우
+    # 다이어리가 없음
     if not diaries:
         return {
             "status": 404,
@@ -527,7 +529,7 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
             {
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
-                "image": diary.image_path if diary.image_path else "띠로리로고",  # 이미지가 없으면 기본 이미지 사용
+                "image": diary.images[0].image_url if diary.images else "띠로리로고",
                 "bookmark": diary.like
             }
             for diary in diaries
@@ -540,7 +542,7 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
                 "title": diary.title,
-                "image": diary.image_path if diary.image_path else "띠로리로고",  # 이미지가 없으면 기본 이미지 사용
+                "image": diary.images[0].image_url if diary.images else "띠로리로고",
                 "bookmark": diary.like
             }
             for diary in diaries
@@ -557,7 +559,6 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
         "message": f"{year}-{month}에 대한 메인 페이지 조회 완료",
         "data": result
     }
-
 
 
 @router.post("/cancel")

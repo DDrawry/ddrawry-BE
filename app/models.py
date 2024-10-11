@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, Date, String, ForeignKey, TIMESTAMP, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timezone
+from sqlalchemy.orm import relationship
 Base = declarative_base()
 
 class User(Base):
@@ -40,6 +41,8 @@ class Diary(Base):
     updated_at = Column(TIMESTAMP, nullable=True, onupdate=func.now())  # 업데이트 시 시간 변경
     is_deleted = Column(Boolean, nullable=False, default=False)
     like = Column(Boolean, nullable=False, default=False)
+    
+    images = relationship("Image", backref="diary", lazy="joined")
 
 
 class TempDiary(Base):
@@ -102,3 +105,5 @@ class Prompt(Base):
     prompt = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
     is_use = Column(Boolean, nullable=True, default=True)
+
+
