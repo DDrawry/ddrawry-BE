@@ -152,13 +152,7 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
             "is_exist": True,
             "data": {
                 "date": formatted_date,
-                "diary_id": diary.id,
-                "title": diary.title,
-                "weather": diary.weather,
-                "mood": diary.mood,
-                "nickname": user.nickname,
-                "story": diary.story,
-                "like": diary.like,
+                "diary_id": diary.id
             },
         }
 
@@ -175,13 +169,10 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
             "status": 200,
             "message": "임시 다이어리가 이미 존재합니다.",
             "is_exist": False,
+            "is_temp_exist": True,
             "temp_data": {
-                "temp_diary_id": temp_diary.id,
-                "title": temp_diary.title,
-                "weather": temp_diary.weather,
-                "mood": temp_diary.mood,
-                "nickname": user.nickname,
-                "story": temp_diary.story,
+                "date": formatted_date,
+                "temp_id": temp_diary.id,
             }
         }
 
@@ -205,6 +196,7 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
         "status": 200,
         "message": "임시 다이어리가 존재하지 않아 새로 생성되었습니다.",
         "is_exist": False,
+        "is_temp_exist": False,
         "data": {
             "date": formatted_date,
             "temp_id": new_temp_diary.id
@@ -220,13 +212,38 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
 #     db.refresh(new_temp_diary)
 #     return new_temp_diary
 
-# # /diaries/temp/{id}
-# @router.get("/temp/{id}")
-# async def get_temp_diary(id: int, db: Session = Depends(get_db)):
-#     temp_diary = db.query(TempDiary).filter(TempDiary.id == id).first()
-#     if not temp_diary:
-#         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
-#     return temp_diary
+@router.get("/temp/{id}")
+async def get_temp_diary(
+    id: int, 
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_current_user_id)
+):
+    # 현재 로그인한 유저 정보를 조회
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+    
+    # temp_diary 정보 조회
+    temp_diary = db.query(TempDiary).filter(TempDiary.id == id, TempDiary.user_id == user_id, TempDiary.status == 0).first()
+    if not temp_diary:
+        raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
+
+    # 필요한 데이터 반환
+    return {
+        "status": 200,
+        "message": "임시 다이어리를 조회 완료.",
+        "data": {
+            "id": temp_diary.id,
+            "user_id": temp_diary.user_id,
+            "date": temp_diary.date,
+            "nickname": user.nickname,  # 유저의 닉네임을 가져와서 포함
+            "title": temp_diary.title,
+            "weather": temp_diary.weather,
+            "mood": temp_diary.mood,
+            "story": temp_diary.story,
+        }
+    }
+
 
 # /diaries/temp/{id}
 @router.put("/temp/{id}")
