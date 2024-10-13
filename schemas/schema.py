@@ -30,20 +30,20 @@ class Diary(BaseModel):
     story: str
     nickname: str
     like: bool = False
-    image_url: Optional[str] = None  # 이미지 URL 필드 추가
+    image_url: Optional[str] = None  
 
     class Config:
         orm_mode = True
 
 # 다이어리 생성 시 사용하는 모델
 class DiaryCreate(BaseModel):
-    date: Optional[str] = None  # 날짜를 str로 받음, 나중에 변환할 것
+    date: Optional[str] = None  
     nickname: Optional[str] = None
     mood: MoodEnum  # Enum으로 변경
     weather: WeatherEnum  # Enum으로 변경
     title: str
     story: Optional[str] = None
-    like: Optional[bool] = False  # 생성 시에도 좋아요 상태를 받을 수 있도록 추가
+    like: Optional[bool] = False  
 
 # 임시 다이어리
 class TempDiarySchema(BaseModel):
@@ -64,13 +64,13 @@ class Settings(BaseModel):
     dark_mode: Union[bool, None] = None
 
 class DiaryCreate(BaseModel):
-    date: Optional[str] = None  # 선택적 필드
-    nickname: Optional[str] = None  # 선택적 필드
-    mood: int  # 필수 필드
-    weather: int  # 필수 필드
-    title: str  # 필수 필드
-    image: Optional[str] = None  # 선택적 필드
-    story: Optional[str] = None  # 선택적 필드
+    date: Optional[str] = None  
+    nickname: Optional[str] = None  
+    mood: int  
+    weather: int  
+    title: str  
+    image: Optional[str] = None  
+    story: Optional[str] = None  
 
     class Config:
         orm_mode = True    

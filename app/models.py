@@ -37,8 +37,8 @@ class Diary(Base):
     date = Column(Date, nullable=True)
     nickname = Column(String(100), nullable=True)
     story = Column(Text, nullable=True)
-    created_at = Column(TIMESTAMP, nullable=True, default=func.now())  # 기본값 추가
-    updated_at = Column(TIMESTAMP, nullable=True, onupdate=func.now())  # 업데이트 시 시간 변경
+    created_at = Column(TIMESTAMP, nullable=True, default=func.now()) 
+    updated_at = Column(TIMESTAMP, nullable=True, onupdate=func.now()) 
     is_deleted = Column(Boolean, nullable=False, default=False)
     like = Column(Boolean, nullable=False, default=False)
     
@@ -50,23 +50,25 @@ class TempDiary(Base):
 
     id = Column(Integer, primary_key=True)
     diary_id = Column(Integer, ForeignKey('diary.id'), nullable=True)
-    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)  # 필수값
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     title = Column(String(255), nullable=True)
     weather = Column(Integer, nullable=True)
     mood = Column(Integer, nullable=True)
     date = Column(Date, nullable=True)  
     nickname = Column(String(100), nullable=True)  
     story = Column(Text, nullable=True)  
+    image = Column(String(255), nullable=True)
     created_at = Column(TIMESTAMP, nullable=True, default=datetime.now(timezone.utc))
     updated_at = Column(TIMESTAMP, nullable=True, onupdate=datetime.now(timezone.utc))
     like = Column(Boolean, nullable=False, default=False)
     status = Column(Boolean, nullable=False, default=False)
-
+    images = relationship("Image", backref="temp_diary", lazy="joined")
 class Image(Base):
     __tablename__ = 'image'
     
     id = Column(Integer, primary_key=True)
     diary_id = Column(Integer, ForeignKey('diary.id'), nullable=False)
+    temp_diary_id = Column(Integer, ForeignKey('temp_diary.id'), nullable=True)
     image_url = Column(String(255), nullable=True)
     created_at = Column(TIMESTAMP, nullable=True)
     is_temp = Column(Boolean, nullable=True, default=False)
