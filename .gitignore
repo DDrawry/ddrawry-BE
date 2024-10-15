@@ -14,12 +14,22 @@ test.db
 log.txt
 Pipfile.lock
 env3.*
-env
+.env
+.env.local  # 로컬 환경 변수 파일 추가
 docs_build
 site_build
 venv
 docs.zip
 archive.zip
+alembic.ini
+*.egg-info  # 패키지 메타데이터
+*.pyc  # 바이트코드 파일
+*.pyo  # 최적화된 바이트코드
+*.pyd  # 윈도우 파이썬 확장 모듈
+
+# Docker 관련
+docker-compose.override.yml
+*.log  # 로그 파일
 
 # vim temporary files
 *~
@@ -29,5 +39,13 @@ archive.zip
 # macOS
 .DS_Store
 
+# Ubuntu 관련
+*.bak  # 백업 파일
+*.swp  # vim 스왑 파일
+*.tmp  # 임시 파일
+
 # pyenv
 .python-version
+
+# Thumbs.db
+Thumbs.db  # 윈도우 미리보기 캐시 파일
