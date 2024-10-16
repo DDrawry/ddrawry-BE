@@ -15,34 +15,28 @@ router = APIRouter(prefix="/diaries")
 
 # /diaries
 @router.post("/")
-async def new_diary(diary: DiaryCreate, db: Session = Depends(get_db)):
-    
-    user = db.query(User).filter(User.id == 1).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-
+async def new_diary(
+    diary: DiaryCreate, 
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_current_user_id)
+):
     new_diary = DiaryModel(
-        user_id=user.id,
+        user_id=user_id,
         title=diary.title,
         story=diary.story if diary.story else "",
         weather=diary.weather,
         mood=diary.mood,
-        date=diary.date,  # date가 없으면 None
-        nickname=diary.nickname,  # nickname이 없으면 None
+        date=diary.date,
+        nickname=diary.nickname,
         created_at=datetime.now(),
         updated_at=datetime.now(),
     )
+    
     db.add(new_diary)
-    new_image = Image(
-        diary_id=new_diary.id
-    )
     db.commit()
     db.refresh(new_diary)
-    
-    return {"status": 201,
-            "message": "다이어리 저장 성공",
-            "data": {"id": new_diary.id}
-        }
+
+    return {"status": 201, "message": "다이어리 저장 성공", "data": {"id": new_diary.id}}
 
 # /diaries/{diary_id}
 @router.put("/{diary_id}")
@@ -73,8 +67,8 @@ async def edit_diary(diary_id: int, diary: Diary, db: Session = Depends(get_db))
         "diary": {
             "title": existing_diary.title,
             "story": existing_diary.story,
-            "mood": MoodEnum(existing_diary.mood).name,  # 숫자를 문자열로 변환
-            "weather": WeatherEnum(existing_diary.weather).name,  # 숫자를 문자열로 변환
+            "mood": MoodEnum(existing_diary.mood).name,
+            "weather": WeatherEnum(existing_diary.weather).name,
             "date": existing_diary.date,
             "nickname": existing_diary.nickname,
             "updated_at": existing_diary.updated_at
@@ -149,7 +143,6 @@ async def update_temp_diary_status(
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id)  # 현재 사용자의 user_id 가져오기
 ):
-    # date 값을 'YYYY-MM-DD' 형식으로 변환
     try:
         formatted_date = datetime.strptime(request.date, "%Y-%m-%d").date()
     except ValueError:
