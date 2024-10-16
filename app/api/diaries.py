@@ -321,72 +321,6 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
     }
 
 
-@router.get("/diary/{id}")
-async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db)):
-    # 1. 다이어리를 조회
-    diary = db.query(DiaryModel).filter(DiaryModel.id == id).first()
-    
-    if not diary:
-        raise HTTPException(status_code=404, detail=f"{id}번 다이어리를 찾을 수 없습니다.")
-    
-    image = db.query(Image).filter(
-        Image.diary_id == diary.id,
-        Image.is_active == True,
-        Image.is_deleted == False
-    ).first()  # 첫 번째 결과만 가져오기
-
-    # 이미지 URL이 없으면 None으로 설정
-    image_url = image.image_url if image else None
-
-    # 2. edit 파라미터가 없거나 false일 때는 다이어리만 반환
-    if not edit:
-        return {
-            "status": 200,
-            "message": f"{id}번 다이어리 조회 완료",
-            "data": {
-                "id": diary.id,
-                "date": diary.date,
-                "nickname": diary.nickname,
-                "mood": diary.mood,
-                "weather": diary.weather,
-                "title": diary.title,
-                "image": image_url,
-                "story": diary.story
-            }
-        }
-    
-    # 3. edit=true일 경우, 임시 다이어리 생성
-    temp_diary = TempDiary(
-        diary_id=diary.id,
-        date=diary.date,
-        nickname=diary.nickname,
-        mood=diary.mood,
-        weather=diary.weather,
-        title=diary.title,
-        image=image_url,
-        story=diary.story
-    )
-    db.add(temp_diary)
-    db.commit()
-    db.refresh(temp_diary)
-
-    # 4. 임시 다이어리의 temp_id와 함께 응답
-    return {
-        "status": 200,
-        "message": f"{id}번 다이어리 수정 준비 완료",
-        "data": {
-            "id": diary.id,
-            "date": diary.date,
-            "nickname": diary.nickname,
-            "mood": diary.mood,
-            "weather": diary.weather,
-            "title": diary.title,
-            "image": image_url,
-            "story": diary.story
-        },
-        "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
-    }
-
 # /diaries/{id}
 @router.delete("/{diary_id}")
 async def delete_diary(diary_id: int, db: Session = Depends(get_db)):
@@ -504,6 +438,75 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
         "status": 200,
         "message": f"{year}-{month}에 대한 메인 페이지 조회 완료",
         "data": result
+    }
+
+
+@router.get("/{id}")
+async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    # 1. 다이어리를 조회
+    diary = db.query(DiaryModel).filter(DiaryModel.id == id).first()
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not diary:
+        raise HTTPException(status_code=404, detail=f"{id}번 다이어리를 찾을 수 없습니다.")
+    
+    image = db.query(Image).filter(
+        Image.diary_id == diary.id,
+        Image.is_active == True,
+        Image.is_deleted == False
+    ).first()  # 첫 번째 결과만 가져오기
+
+    # 이미지 URL이 없으면 None으로 설정
+    image_url = image.image_url if image else None
+
+    # 2. edit 파라미터가 없거나 false일 때는 다이어리만 반환
+    if not edit:
+        return {
+            "status": 200,
+            "message": f"{id}번 다이어리 조회 완료",
+            "data": {
+                "id": diary.id,
+                "date": diary.date,
+                "nickname": diary.nickname,
+                "mood": diary.mood,
+                "weather": diary.weather,
+                "title": diary.title,
+                "image": image_url,
+                "story": diary.story
+            }
+        }
+    
+    # 3. edit=true일 경우, 임시 다이어리 생성
+    temp_diary = TempDiary(
+        diary_id=diary.id,
+        user_id=user.id,
+        date=diary.date,
+        nickname=user.nickname,
+        mood=diary.mood,
+        weather=diary.weather,
+        title=diary.title,
+        image=image_url,
+        story=diary.story
+    )
+    db.add(temp_diary)
+    db.commit()
+    db.refresh(temp_diary)
+
+    # 4. 임시 다이어리의 temp_id와 함께 응답
+    return {
+        "status": 200,
+        "message": f"{id}번 다이어리 수정 준비 완료",
+        "data": {
+            "id": diary.id,
+            "date": diary.date,
+            "nickname": diary.nickname,
+            "mood": diary.mood,
+            "weather": diary.weather,
+            "title": diary.title,
+            "image": image_url,
+            "story": diary.story
+        },
+        "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
     }
 
 
