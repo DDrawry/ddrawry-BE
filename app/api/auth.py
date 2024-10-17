@@ -35,6 +35,7 @@ def kakao_login():
 
 @router.get("/kakao/callback")
 async def kakao_callback(code: str, db: Session = Depends(get_db)):
+    # Kakao API 토큰 요청 URL
     kakao_token_url = "https://kauth.kakao.com/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     data = {
@@ -44,6 +45,7 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         "code": code,
     }
 
+    # Kakao 토큰 요청
     async with httpx.AsyncClient() as client:
         token_response = await client.post(kakao_token_url, headers=headers, data=data)
         if token_response.status_code != 200:
@@ -57,7 +59,6 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         user_info_url = "https://kapi.kakao.com/v2/user/me"
         user_headers = {"Authorization": f"Bearer {kakao_access_token}"}
         user_response = await client.get(user_info_url, headers=user_headers)
-        print("User Info Response:", user_response.status_code, user_response.text)
 
         if user_response.status_code != 200:
             raise HTTPException(status_code=user_response.status_code, detail="Failed to get user info")
@@ -66,42 +67,44 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         kakao_id = user_info.get("id")
         nickname = user_info.get("properties", {}).get("nickname")
 
-            # DB에 사용자 정보 저장
+        # DB에 사용자 정보 저장
         user = db.query(User).filter(User.kakao_id == kakao_id).first()
         if user:
             # 기존 토큰을 삭제하지 않고 새로 추가
-            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)  # 변경된 부분
+            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now())
             db.add(new_token)
         else:
+            # 새로운 사용자 생성
             user = User(kakao_id=kakao_id, nickname=nickname, created_at=datetime.now())
             db.add(user)
-            db.commit()
-            db.refresh(user)
+            db.commit()  # 사용자 정보를 DB에 저장
+            db.refresh(user)  # 방금 추가한 사용자 정보를 새로고침
 
-            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)  # 변경된 부분
+            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now())
             db.add(new_token)
 
         db.commit()  # 모든 변경 사항 저장
 
         # JWT 액세스 토큰 생성
         jwt_access_payload = {
-            "user_id": user.id,  # 변경된 부분
+            "user_id": user.id,
             "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),
         }
         access_token = jwt.encode(jwt_access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
         # JWT 리프레시 토큰 생성
         jwt_refresh_payload = {
-            "user_id": user.id,  # 변경된 부분
+            "user_id": user.id,
             "exp": datetime.utcnow() + timedelta(minutes=JWT_REFRESH_EXPIRATION_MINUTES),
         }
         refresh_token = jwt.encode(jwt_refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-
+        # 쿠키에 JWT 저장
         response = JSONResponse(content={"message": "Login successful"})
         response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=60)  # JWT 액세스 토큰 쿠키에 저장
         response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, max_age=3600 * 24 * 30)  # JWT 리프레시 토큰을 쿠키에 저장
         return response
+    
 
 @router.get("/kakao/logout")
 async def kakao_logout(response: Response, access_token: str = Cookie(None), db: Session = Depends(get_db)):
