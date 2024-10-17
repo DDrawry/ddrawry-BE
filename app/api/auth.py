@@ -67,6 +67,10 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         kakao_id = user_info.get("id")
         nickname = user_info.get("properties", {}).get("nickname")
 
+        print("User ID:", user.id)
+        print("Kakao ID:", kakao_id)
+        print("Nickname:", nickname)
+
         # DB에 사용자 정보 저장
         user = db.query(User).filter(User.kakao_id == kakao_id).first()
         if user:
