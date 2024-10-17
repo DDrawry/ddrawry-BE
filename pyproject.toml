@@ -17,6 +17,8 @@ jose = "^1.0.0"
 pyjwt = "^2.9.0"
 pydantic = "^2.9.2"
 openai = "^1.51.2"
+pycryptodome = "^3.21.0"
+cryptography = "^43.0.1"
 
 
 [build-system]
