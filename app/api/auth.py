@@ -67,24 +67,19 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         kakao_id = user_info.get("id")
         nickname = user_info.get("properties", {}).get("nickname")
 
-        print("User ID:", user.id)
-        print("Kakao ID:", kakao_id)
-        print("Nickname:", nickname)
-
         # DB에 사용자 정보 저장
         user = db.query(User).filter(User.kakao_id == kakao_id).first()
         if user:
             # 기존 토큰을 삭제하지 않고 새로 추가
-            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now())
+            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
             db.add(new_token)
         else:
-            # 새로운 사용자 생성
             user = User(kakao_id=kakao_id, nickname=nickname, created_at=datetime.now())
             db.add(user)
-            db.commit()  # 사용자 정보를 DB에 저장
-            db.refresh(user)  # 방금 추가한 사용자 정보를 새로고침
+            db.commit()  # 사용자 추가 후 커밋
+            db.refresh(user)  # 새로 추가된 사용자 정보 리프레시
 
-            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now())
+            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
             db.add(new_token)
 
         db.commit()  # 모든 변경 사항 저장
@@ -103,10 +98,9 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         }
         refresh_token = jwt.encode(jwt_refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-        # 쿠키에 JWT 저장
         response = JSONResponse(content={"message": "Login successful"})
-        response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=60)  # JWT 액세스 토큰 쿠키에 저장
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, max_age=3600 * 24 * 30)  # JWT 리프레시 토큰을 쿠키에 저장
+        response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=60)
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, max_age=3600 * 24 * 30)
         return response
     
 
