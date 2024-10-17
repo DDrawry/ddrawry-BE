@@ -51,11 +51,13 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
 
         token_json = token_response.json()
         kakao_access_token = token_json.get("access_token")
+        print("Token Response:", token_response.status_code, token_response.text)
 
         # 사용자 정보 요청
         user_info_url = "https://kapi.kakao.com/v2/user/me"
         user_headers = {"Authorization": f"Bearer {kakao_access_token}"}
         user_response = await client.get(user_info_url, headers=user_headers)
+        print("User Info Response:", user_response.status_code, user_response.text)
 
         if user_response.status_code != 200:
             raise HTTPException(status_code=user_response.status_code, detail="Failed to get user info")
