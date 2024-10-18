@@ -21,5 +21,8 @@ RUN poetry install --no-root
 # 나머지 애플리케이션 파일 복사
 COPY . .
 
+# 데이터베이스 마이그레이션
+RUN poetry run alembic upgrade head
+
 # 애플리케이션 시작
 CMD ["poetry", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

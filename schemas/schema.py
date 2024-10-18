@@ -1,23 +1,23 @@
-from pydantic import constr, BaseModel
+from pydantic import constr, BaseModel, validator
 from enum import Enum
 from typing import Optional, Union
 from datetime import date
 
 class MoodEnum(int, Enum):
-    SMILE = 1
-    SAD = 2
-    MEDIOCRE = 3
-    ANGRY = 4
-    EXCITED = 5
-    HAPPY = 6
+    smile = 1
+    sad = 2
+    mediocre = 3
+    angry = 4
+    excited = 5
+    happy = 6
 
 class WeatherEnum(int, Enum):
-    SUNNY = 1
-    RAINY = 2
-    SNOWY = 3
-    STORMY = 4
-    CLOUDY = 5
-    WINDY = 6
+    sunny = 1
+    rainy = 2
+    snowy = 3
+    stormy = 4
+    cloudy = 5
+    windy = 6
 
 # 다이어리 기본 모델
 class Diary(BaseModel):
@@ -45,18 +45,25 @@ class DiaryCreate(BaseModel):
     story: Optional[str] = None
     like: Optional[bool] = False  
 
-# 임시 다이어리
 class TempDiarySchema(BaseModel):
-    title: str
-    weather: Optional[int] = None
-    mood: Optional[int] = None
-    date: date
+    date: str
     nickname: str
+    mood: MoodEnum
+    weather: WeatherEnum
+    image: str = None
     story: str
-    image_url: Optional[str] = None  # 이미지 필드 추가
 
-    class Config:
-        orm_mode = True
+    @validator("mood", pre=True)
+    def parse_mood(cls, value):
+        if isinstance(value, str):
+            return MoodEnum[value.upper()]  # 문자열을 대문자로 변환하여 Enum으로 매핑
+        return MoodEnum(value)
+
+    @validator("weather", pre=True)
+    def parse_weather(cls, value):
+        if isinstance(value, str):
+            return WeatherEnum[value.upper()]  # 문자열을 대문자로 변환하여 Enum으로 매핑
+        return WeatherEnum(value)
 
 # 사용자 설정
 class Settings(BaseModel):

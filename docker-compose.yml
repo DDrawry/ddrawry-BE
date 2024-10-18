@@ -12,24 +12,10 @@ services:
       - ./app:/ddrawry/app
       - ./log/gunicorn:/log
     environment:
-      - DATABASE_URL=mysql+pymysql://root:tmvlzj12@db:3306/ddrawry
+      - DATABASE_URL=${DATABASE_URL}
       - KAKAO_CLIENT_ID=${KAKAO_CLIENT_ID}
       - KAKAO_REDIRECT_URI=${KAKAO_REDIRECT_URI}
       - JWT_SECRET=${JWT_SECRET}
-    depends_on:
-      - db
-
-  db:
-    container_name: 'mysql'  # MySQL 컨테이너 이름
-    image: mysql:latest
-    restart: always
-    volumes:
-      - mysql-data:/var/lib/mysql
-    environment:
-      MYSQL_DATABASE: ddrawry  # 데이터베이스 이름
-      MYSQL_ROOT_PASSWORD: tmvlzj12
-    ports:
-      - 3306:3306
 
 volumes:
   mysql-data:

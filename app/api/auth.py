@@ -98,7 +98,7 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
 
         response = JSONResponse(content={"message": "Login successful"})
         response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=60)  # JWT 액세스 토큰 쿠키에 저장
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, max_age=3600 * 24 * 30)  # JWT 리프레시 토큰을 쿠키에 저장
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, max_age=3600 * 24 * 30)  # JWT 리프레시 토큰을 쿠키에 저장
         return response
 
 @router.get("/kakao/logout")

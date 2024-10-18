@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from schemas.schema import MoodEnum, WeatherEnum, Diary, TempDiarySchema, Settings, DiaryCreate, StatusUpdateRequest
 from sqlalchemy.orm import Session
 from app.models import Diary as DiaryModel, Image, User, TempDiary
-from ..utils import get_current_user_id
+from ..utils import get_current_user_id, replace_null_with_empty_str
 from ..database import get_db
 from datetime import datetime, timezone
 from sqlalchemy import func
@@ -75,9 +75,9 @@ async def edit_diary(diary_id: int, diary: Diary, db: Session = Depends(get_db))
         }
     }
 
-# /diaries/temp/{temp_id}
+
 @router.put("/temp/{temp_id}")
-async def save_temp(temp_id: int, diary: TempDiarySchema, db: Session = Depends(get_db)):
+async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db)):
     # 이미 존재하는 temp_diary가 있는지 확인
     existing_temp_diary = db.query(TempDiary).filter(TempDiary.id == temp_id).first()
 
@@ -85,14 +85,24 @@ async def save_temp(temp_id: int, diary: TempDiarySchema, db: Session = Depends(
     if not existing_temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
     
-    # 임시 다이어리 수정
-    existing_temp_diary.title = diary.title
-    existing_temp_diary.story = diary.story
-    existing_temp_diary.weather = diary.weather
-    existing_temp_diary.mood = diary.mood
-    existing_temp_diary.date = diary.date
-    existing_temp_diary.nickname = diary.nickname
-    existing_temp_diary.updated_at = datetime.now(timezone.utc)  # 수정된 시간 기록
+    # 필요한 경우에만 필드를 업데이트
+    if "title" in diary and diary["title"] is not None:
+        existing_temp_diary.title = diary["title"]
+    if "story" in diary and diary["story"] is not None:
+        existing_temp_diary.story = diary["story"]
+    if "weather" in diary and diary["weather"] is not None:
+        existing_temp_diary.weather = WeatherEnum[diary["weather"].lower()].value  # Enum의 정수 값으로 저장
+    if "mood" in diary and diary["mood"] is not None:
+        existing_temp_diary.mood = MoodEnum[diary["mood"].lower()].value  # Enum의 정수 값으로 저장
+    if "date" in diary and diary["date"] is not None:
+        existing_temp_diary.date = diary["date"]
+    if "nickname" in diary and diary["nickname"] is not None:
+        existing_temp_diary.nickname = diary["nickname"]
+    if "image" in diary and diary["image"] is not None:
+        existing_temp_diary.image = diary["image"]
+
+    # 수정된 시간 기록
+    existing_temp_diary.updated_at = datetime.now(timezone.utc)
 
     # 변경사항을 DB에 커밋
     db.commit()
@@ -104,6 +114,7 @@ async def save_temp(temp_id: int, diary: TempDiarySchema, db: Session = Depends(
             "temp_id": existing_temp_diary.id
         }
     }
+
 
 @router.get("/temp/{temp_id}")
 async def get_temp_diary(
@@ -122,19 +133,22 @@ async def get_temp_diary(
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
 
     # 필요한 데이터 반환
+    response_data = {
+        "temp_id": temp_diary.id,
+        "nickname": user.nickname,
+        "title": temp_diary.title,
+        "weather": temp_diary.weather,
+        "mood": temp_diary.mood,
+        "story": temp_diary.story,
+    }
+
+    # null 값을 빈 문자열로 변환
+    clean_response_data = replace_null_with_empty_str(response_data)
+
     return {
         "status": 200,
         "message": "임시 다이어리를 조회 완료.",
-        "data": {
-            "id": temp_diary.id,
-            "user_id": temp_diary.user_id,
-            "date": temp_diary.date,
-            "nickname": user.nickname,
-            "title": temp_diary.title,
-            "weather": temp_diary.weather,
-            "mood": temp_diary.mood,
-            "story": temp_diary.story,
-        }
+        "data": clean_response_data  # 변환된 데이터를 반환
     }
 
 @router.post("/cancel")
