@@ -13,6 +13,7 @@ from sqlalchemy.orm import joinedload
 router = APIRouter(prefix="/diaries")
 
 
+
 # /diaries
 @router.post("/")
 async def new_diary(
@@ -40,35 +41,34 @@ async def new_diary(
 
 # /diaries/{diary_id}
 @router.put("/{diary_id}")
-async def edit_diary(diary_id: int, diary: Diary, db: Session = Depends(get_db)):
+async def edit_diary(diary_id: int, diary: DiaryCreate, db: Session = Depends(get_db)):
     # 기존 다이어리 조회
     existing_diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
 
     if not existing_diary:
         raise HTTPException(status_code=404, detail="Diary not found")
 
-    # 다이어리 수정
+    # 다이어리 업데이트
     existing_diary.title = diary.title
-    existing_diary.story = diary.story
-    existing_diary.mood = diary.mood.value
-    existing_diary.weather = diary.weather.value
+    existing_diary.story = diary.story or ""  # story가 없으면 빈 문자열
+    existing_diary.mood = diary.mood  # 이미 Enum으로 변환됨
+    existing_diary.weather = diary.weather  # 이미 Enum으로 변환됨
     existing_diary.date = diary.date
     existing_diary.nickname = diary.nickname
-    existing_diary.updated_at = datetime.now(timezone.utc)# 수정된 시간 업데이트
+    existing_diary.updated_at = datetime.now(timezone.utc)  
 
     # 변경사항을 DB에 커밋
     db.commit()
     db.refresh(existing_diary)
 
     return {
-        "status": 200,
         "message": "다이어리 수정 성공",
         "id": existing_diary.id,
         "diary": {
             "title": existing_diary.title,
             "story": existing_diary.story,
-            "mood": MoodEnum(existing_diary.mood).name,
-            "weather": WeatherEnum(existing_diary.weather).name,
+            "mood": MoodEnum(existing_diary.mood).name, 
+            "weather": WeatherEnum(existing_diary.weather).name,  
             "date": existing_diary.date,
             "nickname": existing_diary.nickname,
             "updated_at": existing_diary.updated_at
@@ -347,29 +347,30 @@ async def delete_diary(diary_id: int, db: Session = Depends(get_db)):
     }
 
 # /diaries/search/{keyword}
-@router.get("/search/{keyword}")
+@router.get("/search")
 async def search_diary(keyword: str, db: Session = Depends(get_db)):
     if keyword == "":
-        diaries = db.query(DiaryModel).all()
+        # 빈 키워드일 경우 모든 다이어리 조회
+        diaries = db.query(DiaryModel).filter(DiaryModel.is_deleted == False).all()
         return {
             "status": 200,
             "message": "모든 다이어리 조회 완료",
             "data": diaries,
         }
-    
-    # 키워드
+
+    # 키워드 검색
     diaries = db.query(DiaryModel).filter(
-        (DiaryModel.title.like(f"%{keyword}%")) |  
-        (DiaryModel.story.like(f"%{keyword}%")) &  
-        (DiaryModel.is_deleted == False)           # 삭제되지 않은 항목만
+        (DiaryModel.title.like(f"%{keyword}%")) |  # 제목에서 키워드 검색
+        (DiaryModel.story.like(f"%{keyword}%")),   # 내용에서 키워드 검색
+        (DiaryModel.is_deleted == False)             # 삭제되지 않은 다이어리
     ).all()
-    
+
     if not diaries:
         return {
             "status": 404,
             "message": f"'{keyword}'에 대한 검색 결과가 없습니다."
         }
-    
+
     results = []
     for diary in diaries:
         # diary에 연결된 이미지 가져오기
@@ -383,7 +384,7 @@ async def search_diary(keyword: str, db: Session = Depends(get_db)):
             "image": image_url,
             "bookmark": diary.like,
         })
-    
+
     return {
         "status": 200,
         "message": f"'{keyword}'에 관한 다이어리 조회 완료",
@@ -515,6 +516,7 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
         },
         "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
     }
+
 
 
 @router.put("/like/{diary_id}")
