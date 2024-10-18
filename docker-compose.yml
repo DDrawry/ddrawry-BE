@@ -12,7 +12,7 @@ services:
       - ./app:/ddrawry/app
       - ./log/gunicorn:/log
     environment:
-      - DATABASE_URL=mysql+pymysql://root:tmvlzj12@db:3306/ddrawry
+      - DATABASE_URL=${DATABASE_URL}
       - KAKAO_CLIENT_ID=${KAKAO_CLIENT_ID}
       - KAKAO_REDIRECT_URI=${KAKAO_REDIRECT_URI}
       - JWT_SECRET=${JWT_SECRET}
