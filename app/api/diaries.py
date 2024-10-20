@@ -132,13 +132,17 @@ async def get_temp_diary(
     if not temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
 
+    # mood와 weather 값을 Enum 이름으로 변환
+    mood_str = MoodEnum(temp_diary.mood).name
+    weather_str = WeatherEnum(temp_diary.weather).name
+
     # 필요한 데이터 반환
     response_data = {
         "temp_id": temp_diary.id,
         "nickname": user.nickname,
         "title": temp_diary.title,
-        "weather": temp_diary.weather,
-        "mood": temp_diary.mood,
+        "weather": mood_str.lower(),
+        "mood": weather_str.lower(),
         "story": temp_diary.story,
     }
 

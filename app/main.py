@@ -13,14 +13,18 @@ from .api.v1 import V1
 app = FastAPI()
 app.include_router(V1)
 
-# CORS 설정
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000"],  # 허용할 도메인
+    allow_origins=[
+        "http://localhost:8000",  # 로컬 환경
+        "http://ec2-43-203-213-139.ap-northeast-2.compute.amazonaws.com:8000"  # EC2 서버
+    ],
     allow_credentials=True,  # 쿠키 허용 여부
     allow_methods=["*"],  # 허용할 HTTP 메소드
     allow_headers=["*"],  # 허용할 헤더
 )
+
 
 @app.get("/")
 def read_root():
