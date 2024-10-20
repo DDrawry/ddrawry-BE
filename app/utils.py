@@ -26,3 +26,12 @@ def get_current_user_id(access_token: str = Cookie(None)):
 def replace_null_with_empty_str(data: dict) -> dict:
     """Dict에서 None 값을 빈 문자열로 변환하는 함수"""
     return {key: (value if value is not None else "") for key, value in data.items()}
+
+
+from fastapi import Request
+
+def get_dev_from_request(request: Request):
+    dev = request.query_params.get("dev")
+    if dev is not None and dev in ["0", "1"]:
+        return int(dev)
+    return 1  # 기본값은 1
