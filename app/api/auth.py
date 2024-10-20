@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.models import User, Token  # User와 Token 모델 import
 from app.database import get_db  # DB 세션을 가져오는 함수를 import합니다.
-from app.utils import get_current_user_id
+from app.utils import get_current_user_id, get_dev_from_request
 
 router = APIRouter(prefix="/auth")
 
@@ -20,27 +20,31 @@ JWT_SECRET = os.getenv("JWT_SECRET")  # JWT 비밀키
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_MINUTES = 300  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
 JWT_REFRESH_EXPIRATION_MINUTES = 60  # JWT 리프레시 토큰 유효 시간 60분
-
-
+HOST = os.getenv("HOST")
+PROD_HOST = os.getenv("PROD_HOST")
 @router.get("/kakao/login")
-def kakao_login():
+def kakao_login(request: Request):
+    dev = get_dev_from_request(request)
+    redirect_uri = f"{KAKAO_REDIRECT_URI}?dev={dev}"  # dev 값을 쿼리 파라미터로 추가
     kakao_auth_url = (
         f"https://kauth.kakao.com/oauth/authorize?"
         f"client_id={KAKAO_CLIENT_ID}&"
-        f"redirect_uri={KAKAO_REDIRECT_URI}&"
+        f"redirect_uri={redirect_uri}&"
         f"response_type=code"
     )
     return RedirectResponse(url=kakao_auth_url)
 
-
 @router.get("/kakao/callback")
-async def kakao_callback(code: str, db: Session = Depends(get_db)):
+async def kakao_callback(code: str, request: Request, db: Session = Depends(get_db)):
+    # 요청에서 dev 값을 추출
+    dev = request.query_params.get("dev", "0")  # 기본값은 "0"으로 설정
+
     kakao_token_url = "https://kauth.kakao.com/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     data = {
         "grant_type": "authorization_code",
         "client_id": KAKAO_CLIENT_ID,
-        "redirect_uri": KAKAO_REDIRECT_URI,
+        "redirect_uri": f"{KAKAO_REDIRECT_URI}?dev={dev}",  # dev 값을 포함
         "code": code,
     }
 
@@ -64,11 +68,10 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         kakao_id = user_info.get("id")
         nickname = user_info.get("properties", {}).get("nickname")
 
-            # DB에 사용자 정보 저장
+        # DB에 사용자 정보 저장
         user = db.query(User).filter(User.kakao_id == kakao_id).first()
         if user:
-            # 기존 토큰을 삭제하지 않고 새로 추가
-            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)  # 변경된 부분
+            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
             db.add(new_token)
         else:
             user = User(kakao_id=kakao_id, nickname=nickname, created_at=datetime.now())
@@ -76,31 +79,37 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(user)
 
-            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)  # 변경된 부분
+            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
             db.add(new_token)
 
-        db.commit()  # 모든 변경 사항 저장
+        db.commit()
 
         # JWT 액세스 토큰 생성
         jwt_access_payload = {
-            "user_id": user.id,  # 변경된 부분
+            "user_id": user.id,
             "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),
         }
         access_token = jwt.encode(jwt_access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
         # JWT 리프레시 토큰 생성
         jwt_refresh_payload = {
-            "user_id": user.id,  # 변경된 부분
+            "user_id": user.id,
             "exp": datetime.utcnow() + timedelta(minutes=JWT_REFRESH_EXPIRATION_MINUTES),
         }
         refresh_token = jwt.encode(jwt_refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
+        # dev에 따라 리다이렉트 URL 설정
+        if dev == "1":
+            redirect_uri = HOST
+        else:
+            redirect_uri = PROD_HOST
 
-        response = JSONResponse(content={"message": "Login successful"})
-        response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=60)  # JWT 액세스 토큰 쿠키에 저장
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, max_age=3600 * 24 * 30)  # JWT 리프레시 토큰을 쿠키에 저장
+        response = RedirectResponse(url=redirect_uri)
+        response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=60)
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, max_age=3600 * 24 * 30)
         return response
 
+    
 @router.get("/kakao/logout")
 async def kakao_logout(response: Response, access_token: str = Cookie(None), db: Session = Depends(get_db)):
     if not access_token:
