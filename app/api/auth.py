@@ -20,8 +20,10 @@ JWT_SECRET = os.getenv("JWT_SECRET")  # JWT 비밀키
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_MINUTES = 300  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
 JWT_REFRESH_EXPIRATION_MINUTES = 60  # JWT 리프레시 토큰 유효 시간 60분
-HOST = os.getenv("HOST")
+DDRAWRY_HOST = os.getenv("DDRAWRY_HOST")
 PROD_HOST = os.getenv("PROD_HOST")
+
+
 @router.get("/kakao/login")
 def kakao_login(request: Request):
     dev = get_dev_from_request(request)
@@ -100,13 +102,15 @@ async def kakao_callback(code: str, request: Request, db: Session = Depends(get_
 
         # dev에 따라 리다이렉트 URL 설정
         if dev == "1":
-            redirect_uri = HOST
+            redirect_uri = DDRAWRY_HOST
+            secure = False
         else:
             redirect_uri = PROD_HOST
+            secure = True
 
         response = RedirectResponse(url=redirect_uri)
-        response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=60)
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, max_age=3600 * 24 * 30)
+        response.set_cookie(key="access_token", value=access_token, httponly=True,  max_age=60, samesite='none', secure=secure)
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, max_age=3600 * 24 * 30, samesite='none', secure=secure)
         return response
 
     
