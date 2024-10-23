@@ -43,10 +43,16 @@ async def kakao_callback(code: str, request: Request, db: Session = Depends(get_
 
     kakao_token_url = "https://kauth.kakao.com/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    
+    if dev == 1:
+        redirect_uri = "localhost:5173/callback/login"
+    else:
+        redirect_uri = f"{KAKAO_REDIRECT_URI}?dev={dev}"
+
     data = {
         "grant_type": "authorization_code",
         "client_id": KAKAO_CLIENT_ID,
-        "redirect_uri": f"{KAKAO_REDIRECT_URI}?dev={dev}",  # dev 값을 포함
+        "redirect_uri": redirect_uri,  # dev 값을 포함
         "code": code,
     }
 
@@ -103,15 +109,20 @@ async def kakao_callback(code: str, request: Request, db: Session = Depends(get_
         # dev에 따라 리다이렉트 URL 설정
         if dev == "1":
             redirect_uri = DDRAWRY_HOST
-            secure = False
+            response = RedirectResponse(url=redirect_uri)
+
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token
+            }
+        
         else:
             redirect_uri = PROD_HOST
             secure = True
 
-        response = RedirectResponse(url=redirect_uri)
-        response.set_cookie(key="access_token", value=access_token, httponly=True,  max_age=60, samesite='none', secure=secure)
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, max_age=3600 * 24 * 30, samesite='none', secure=secure)
-        return response
+            response.set_cookie(key="access_token", value=access_token, httponly=True,  max_age=60, samesite='none', secure=secure)
+            response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, max_age=3600 * 24 * 30, samesite='none', secure=secure)
+            return response
 
     
 @router.get("/kakao/logout")
