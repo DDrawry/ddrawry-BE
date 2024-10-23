@@ -109,20 +109,15 @@ async def kakao_callback(code: str, request: Request, db: Session = Depends(get_
         # dev에 따라 리다이렉트 URL 설정
         if dev == "1":
             redirect_uri = DDRAWRY_HOST
-            response = RedirectResponse(url=redirect_uri)
-
-            return {
-                "access_token": access_token,
-                "refresh_token": refresh_token
-            }
-        
+            secure = False
         else:
             redirect_uri = PROD_HOST
             secure = True
 
-            response.set_cookie(key="access_token", value=access_token, httponly=True,  max_age=60, samesite='none', secure=secure)
-            response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, max_age=3600 * 24 * 30, samesite='none', secure=secure)
-            return response
+        response = RedirectResponse(url=redirect_uri)
+        response.set_cookie(key="access_token", value=access_token, httponly=True,  max_age=60, samesite='none', secure=secure)
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, max_age=3600 * 24 * 30, samesite='none', secure=secure)
+        return response
 
     
 @router.get("/kakao/logout")
