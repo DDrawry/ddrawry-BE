@@ -35,14 +35,15 @@ PROD_HOST = os.getenv("PROD_HOST")
 #     )
 #     return RedirectResponse(url=kakao_auth_url)
 
-
+from schemas.schema import KakaoCallbackCode
 @router.post("/kakao/callback")
-async def kakao_callback(code: str, db: Session = Depends(get_db)):
+async def kakao_callback(request: KakaoCallbackCode, db: Session = Depends(get_db)):
     # 요청에서 dev 값을 추출
 
     kakao_token_url = "https://kauth.kakao.com/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-
+    code = request.code
+    
     data = {
         "grant_type": "authorization_code",
         "client_id": KAKAO_CLIENT_ID,
