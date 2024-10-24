@@ -522,51 +522,18 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
     }
 
 
-
-@router.put("/like/{diary_id}")
-async def like_diary(diary_id: int, db: Session = Depends(get_db)):
-    diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
-    if not diary:
-        raise HTTPException(status_code=404, detail="Diary not found")
-    
-    # 좋아요 상태를 토글
-    diary.like = not diary.like
-    db.commit()
-    
-    # 좋아요 상태에 따라 메시지 변경
-    if diary.like:
-        return {
-            "status": 200,
-            "message": "좋아요 등록이 성공하였습니다.",
-            "data": {
-                "id": id,
-                "bookmark": diary.like
-            }
-        }
-    else:
-        return {
-            "status": 200,
-            "message": "좋아요 등록이 실패하였습니다.",
-            "data": {
-                "id": id,
-                "bookmark": diary.like
-            }
-        }
-
 # 전체/월별
 # /diaries/like 
 # 좋아요를 누른 다이어리들 조회 API
 @router.get("/like")
-async def get_like_diaries(type: str, date: str = None, db: Session = Depends(get_db)): 
+async def get_like_diaries(type: str, date: str = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)): 
     if type == "month" and date and len(date) == 6:
         year = int(date[:4])
         month = int(date[4:])
-        
-        # 로그 추가
-        print(f"Querying for year: {year}, month: {month}")
 
         # 해당 연도와 월에 해당하는 좋아요 누른 다이어리를 조회
         liked_diaries = db.query(DiaryModel).filter(
+            DiaryModel.user_id == user_id,  # 해당 유저의 다이어리만
             DiaryModel.like == True,
             DiaryModel.date.between(f"{year}-{month:02d}-01", f"{year}-{month:02d}-30")  # 30일까지 확인
         ).all()
@@ -632,3 +599,34 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             "message": "모든 좋아요를 누른 일기 조회 완료",
             "data": result,
     }
+
+@router.put("/like/{diary_id}")
+async def like_diary(diary_id: int, db: Session = Depends(get_db)):
+    diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
+    if not diary:
+        raise HTTPException(status_code=404, detail="Diary not found")
+    
+    # 좋아요 상태를 토글
+    diary.like = not diary.like
+    db.commit()
+    
+    # 좋아요 상태에 따라 메시지 변경
+    if diary.like:
+        return {
+            "status": 200,
+            "message": "좋아요 등록이 성공하였습니다.",
+            "data": {
+                "id": id,
+                "bookmark": diary.like
+            }
+        }
+    else:
+        return {
+            "status": 200,
+            "message": "좋아요 등록이 실패하였습니다.",
+            "data": {
+                "id": id,
+                "bookmark": diary.like
+            }
+        }
+
