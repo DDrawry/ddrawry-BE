@@ -15,7 +15,8 @@ router = APIRouter(prefix="/auth")
 load_dotenv()
 
 KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
-KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
+LOCAL_REDIRECT_URI = os.getenv("LOCAL_REDIRECT_URI")
+PROD_REDIRECT_URI = os.getenv("PROD_REDIRECT_URI")
 JWT_SECRET = os.getenv("JWT_SECRET")  # JWT 비밀키
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_MINUTES = 300  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
@@ -24,40 +25,37 @@ DDRAWRY_HOST = os.getenv("DDRAWRY_HOST")
 PROD_HOST = os.getenv("PROD_HOST")
 
 
-# @router.get("/kakao/login")
-# def kakao_login():
 
-#     kakao_auth_url = (
-#         f"https://kauth.kakao.com/oauth/authorize?"
-#         f"client_id={KAKAO_CLIENT_ID}&"
-#         f"redirect_uri={KAKAO_REDIRECT_URI}&"
-#         f"response_type=code"
-#     )
-#     return RedirectResponse(url=kakao_auth_url)
-
-from schemas.schema import KakaoCallbackCode
-@router.post("/kakao/callback")
-async def kakao_callback(request: KakaoCallbackCode, db: Session = Depends(get_db)):
-    # 요청에서 dev 값을 추출
-
+@router.get("/kakao/callback")
+async def kakao_callback(code: str, request: Request, db: Session = Depends(get_db)):
     kakao_token_url = "https://kauth.kakao.com/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    code = request.code
-    
+
+    # 쿼리 파라미터에서 'dev'가 있는지 확인
+    if 'dev' in request.url.query:
+        redirect_uri = LOCAL_REDIRECT_URI
+    else:
+        redirect_uri = PROD_REDIRECT_URI
+    # 인가 코드를 사용하여 액세스 토큰 요청
     data = {
         "grant_type": "authorization_code",
         "client_id": KAKAO_CLIENT_ID,
-        "redirect_uri": KAKAO_REDIRECT_URI,  # dev 값은 프론트엔드에서 처리
+        "redirect_uri": redirect_uri,
         "code": code,
     }
 
     async with httpx.AsyncClient() as client:
+        
         token_response = await client.post(kakao_token_url, headers=headers, data=data)
         if token_response.status_code != 200:
             raise HTTPException(status_code=token_response.status_code, detail="Failed to get Kakao token")
 
         token_json = token_response.json()
         kakao_access_token = token_json.get("access_token")
+
+        print(f"카카오 토큰 요청 실패! 상태 코드: {token_response.status_code}")
+        print(f"응답 본문: {token_response.text}")
+        print(f"응답 헤더: {token_response.headers}")
 
         # 사용자 정보 요청
         user_info_url = "https://kapi.kakao.com/v2/user/me"
@@ -74,9 +72,11 @@ async def kakao_callback(request: KakaoCallbackCode, db: Session = Depends(get_d
         # DB에 사용자 정보 저장
         user = db.query(User).filter(User.kakao_id == kakao_id).first()
         if user:
+            # 기존 사용자일 경우 새로운 토큰 추가
             new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
             db.add(new_token)
         else:
+            # 새로운 사용자일 경우 사용자 생성
             user = User(kakao_id=kakao_id, nickname=nickname, created_at=datetime.now())
             db.add(user)
             db.commit()
@@ -108,87 +108,6 @@ async def kakao_callback(request: KakaoCallbackCode, db: Session = Depends(get_d
             "user_id": user.id,  # 필요한 경우 사용자 ID도 반환
         }
 
-
-
-# @router.get("/kakao/callback")
-# async def kakao_callback(code: str, request: Request, db: Session = Depends(get_db)):
-#     # 요청에서 dev 값을 추출
-#     dev = request.query_params.get("dev", "0")  # 기본값은 "0"으로 설정
-
-#     kakao_token_url = "https://kauth.kakao.com/oauth/token"
-#     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-
-#     data = {
-#         "grant_type": "authorization_code",
-#         "client_id": KAKAO_CLIENT_ID,
-#         "redirect_uri": f"{KAKAO_REDIRECT_URI}?dev={dev}",  # dev 값을 포함
-#         "code": code,
-#     }
-
-#     async with httpx.AsyncClient() as client:
-#         token_response = await client.post(kakao_token_url, headers=headers, data=data)
-#         if token_response.status_code != 200:
-#             raise HTTPException(status_code=token_response.status_code, detail="Failed to get Kakao token")
-
-#         token_json = token_response.json()
-#         kakao_access_token = token_json.get("access_token")
-
-#         # 사용자 정보 요청
-#         user_info_url = "https://kapi.kakao.com/v2/user/me"
-#         user_headers = {"Authorization": f"Bearer {kakao_access_token}"}
-#         user_response = await client.get(user_info_url, headers=user_headers)
-
-#         if user_response.status_code != 200:
-#             raise HTTPException(status_code=user_response.status_code, detail="Failed to get user info")
-
-#         user_info = user_response.json()
-#         kakao_id = user_info.get("id")
-#         nickname = user_info.get("properties", {}).get("nickname")
-
-#         # DB에 사용자 정보 저장
-#         user = db.query(User).filter(User.kakao_id == kakao_id).first()
-#         if user:
-#             new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
-#             db.add(new_token)
-#         else:
-#             user = User(kakao_id=kakao_id, nickname=nickname, created_at=datetime.now())
-#             db.add(user)
-#             db.commit()
-#             db.refresh(user)
-
-#             new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
-#             db.add(new_token)
-
-#         db.commit()
-
-#         # JWT 액세스 토큰 생성
-#         jwt_access_payload = {
-#             "user_id": user.id,
-#             "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),
-#         }
-#         access_token = jwt.encode(jwt_access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-#         # JWT 리프레시 토큰 생성
-#         jwt_refresh_payload = {
-#             "user_id": user.id,
-#             "exp": datetime.utcnow() + timedelta(minutes=JWT_REFRESH_EXPIRATION_MINUTES),
-#         }
-#         refresh_token = jwt.encode(jwt_refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-#         # dev에 따라 리다이렉트 URL 설정
-#         if dev == "1":
-#             redirect_uri = DDRAWRY_HOST
-#             secure = True
-#         else:
-#             redirect_uri = PROD_HOST
-#             secure = True
-
-#         response = RedirectResponse(url=redirect_uri)
-#         response.set_cookie(key="access_token", value=access_token, domain="localhost", httponly=True, max_age=60, samesite="None", secure=secure)
-#         response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, max_age=3600 * 24 * 30, samesite="None", secure=secure)
-#         return response
-
-    
 @router.get("/kakao/logout")
 async def kakao_logout(response: Response, access_token: str = Cookie(None), db: Session = Depends(get_db)):
     if not access_token:
