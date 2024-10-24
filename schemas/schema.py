@@ -91,3 +91,6 @@ class NicknameUpdate(BaseModel):
 class StatusUpdateRequest(BaseModel):
     date: str  # YYYY-MM-DD 형식으로 날짜 받음
     type: str  # "main" 또는 "write"를 받는 필드
+
+class KakaoCallbackCode(BaseModel):
+    code: str

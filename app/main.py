@@ -18,7 +18,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8000",  # 로컬 환경
-        "http://localhost:5173",  # 로컬 환경
+        "https://localhost:5173",  # 로컬 환경
         "http://ec2-43-203-213-139.ap-northeast-2.compute.amazonaws.com:8000"  # EC2 서버
     ],
     allow_credentials=True,  # 쿠키 허용 여부
