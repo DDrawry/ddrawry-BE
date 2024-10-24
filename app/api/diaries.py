@@ -75,7 +75,6 @@ async def edit_diary(diary_id: int, diary: DiaryCreate, db: Session = Depends(ge
         }
     }
 
-
 @router.put("/temp/{temp_id}")
 async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db)):
     # 이미 존재하는 temp_diary가 있는지 확인
@@ -84,22 +83,22 @@ async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db)):
     # 존재하지 않는다면 404 에러를 발생시킴
     if not existing_temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
-    
+
     # 필요한 경우에만 필드를 업데이트
-    if "title" in diary and diary["title"] is not None:
-        existing_temp_diary.title = diary["title"]
-    if "story" in diary and diary["story"] is not None:
-        existing_temp_diary.story = diary["story"]
-    if "weather" in diary and diary["weather"] is not None:
-        existing_temp_diary.weather = WeatherEnum[diary["weather"].lower()].value  # Enum의 정수 값으로 저장
-    if "mood" in diary and diary["mood"] is not None:
-        existing_temp_diary.mood = MoodEnum[diary["mood"].lower()].value  # Enum의 정수 값으로 저장
-    if "date" in diary and diary["date"] is not None:
-        existing_temp_diary.date = diary["date"]
-    if "nickname" in diary and diary["nickname"] is not None:
-        existing_temp_diary.nickname = diary["nickname"]
-    if "image" in diary and diary["image"] is not None:
-        existing_temp_diary.image = diary["image"]
+    if "title" in diary:
+        existing_temp_diary.title = diary["title"] if diary["title"] != "" else None
+    if "story" in diary:
+        existing_temp_diary.story = diary["story"] if diary["story"] != "" else None
+    if "weather" in diary:
+        existing_temp_diary.weather = WeatherEnum[diary["weather"].lower()].value if diary["weather"] != "" else None
+    if "mood" in diary:
+        existing_temp_diary.mood = MoodEnum[diary["mood"].lower()].value if diary["mood"] != "" else None
+    if "date" in diary:
+        existing_temp_diary.date = diary["date"] if diary["date"] != "" else None
+    if "nickname" in diary:
+        existing_temp_diary.nickname = diary["nickname"] if diary["nickname"] != "" else None
+    if "image" in diary:
+        existing_temp_diary.image = diary["image"] if diary["image"] != "" else None
 
     # 수정된 시간 기록
     existing_temp_diary.updated_at = datetime.now(timezone.utc)
@@ -114,6 +113,7 @@ async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db)):
             "temp_id": existing_temp_diary.id
         }
     }
+
 
 
 @router.get("/temp/{temp_id}")
@@ -132,27 +132,27 @@ async def get_temp_diary(
     if not temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
 
-    # mood와 weather 값을 Enum 이름으로 변환
-    mood_str = MoodEnum(temp_diary.mood).name
-    weather_str = WeatherEnum(temp_diary.weather).name
+    # 필요한 데이터 반환 (NULL 값은 포함하지 않음)
+    response_data = {}
 
-    # 필요한 데이터 반환
-    response_data = {
-        "temp_id": temp_diary.id,
-        "nickname": user.nickname,
-        "title": temp_diary.title,
-        "weather": mood_str.lower(),
-        "mood": weather_str.lower(),
-        "story": temp_diary.story,
-    }
-
-    # null 값을 빈 문자열로 변환
-    clean_response_data = replace_null_with_empty_str(response_data)
+    # temp_diary의 각 필드가 존재할 경우에만 추가
+    if temp_diary.id is not None:
+        response_data["temp_id"] = temp_diary.id
+    if user.nickname is not None:
+        response_data["nickname"] = user.nickname
+    if temp_diary.title is not None:
+        response_data["title"] = temp_diary.title
+    if temp_diary.mood is not None:
+        response_data["mood"] = MoodEnum(temp_diary.mood).name.lower()
+    if temp_diary.weather is not None:
+        response_data["weather"] = WeatherEnum(temp_diary.weather).name.lower()
+    if temp_diary.story is not None:
+        response_data["story"] = temp_diary.story
 
     return {
         "status": 200,
         "message": "임시 다이어리를 조회 완료.",
-        "data": clean_response_data  # 변환된 데이터를 반환
+        "data": response_data  # 변환된 데이터를 반환
     }
 
 @router.post("/cancel")
@@ -453,105 +453,7 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
     }
 
 
-@router.get("/{id}")
-async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    # 1. 다이어리를 조회
-    diary = db.query(DiaryModel).filter(DiaryModel.id == id).first()
-    user = db.query(User).filter(User.id == user_id).first()
 
-    if not diary:
-        raise HTTPException(status_code=404, detail=f"{id}번 다이어리를 찾을 수 없습니다.")
-    
-    image = db.query(Image).filter(
-        Image.diary_id == diary.id,
-        Image.is_active == True,
-        Image.is_deleted == False
-    ).first()  # 첫 번째 결과만 가져오기
-
-    # 이미지 URL이 없으면 None으로 설정
-    image_url = image.image_url if image else None
-
-    # 2. edit 파라미터가 없거나 false일 때는 다이어리만 반환
-    if not edit:
-        return {
-            "status": 200,
-            "message": f"{id}번 다이어리 조회 완료",
-            "data": {
-                "id": diary.id,
-                "date": diary.date,
-                "nickname": diary.nickname,
-                "mood": diary.mood,
-                "weather": diary.weather,
-                "title": diary.title,
-                "image": image_url,
-                "story": diary.story
-            }
-        }
-    
-    # 3. edit=true일 경우, 임시 다이어리 생성
-    temp_diary = TempDiary(
-        diary_id=diary.id,
-        user_id=user.id,
-        date=diary.date,
-        nickname=user.nickname,
-        mood=diary.mood,
-        weather=diary.weather,
-        title=diary.title,
-        image=image_url,
-        story=diary.story
-    )
-    db.add(temp_diary)
-    db.commit()
-    db.refresh(temp_diary)
-
-    # 4. 임시 다이어리의 temp_id와 함께 응답
-    return {
-        "status": 200,
-        "message": f"{id}번 다이어리 수정 준비 완료",
-        "data": {
-            "id": diary.id,
-            "date": diary.date,
-            "nickname": diary.nickname,
-            "mood": diary.mood,
-            "weather": diary.weather,
-            "title": diary.title,
-            "image": image_url,
-            "story": diary.story
-        },
-        "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
-    }
-
-
-
-@router.put("/like/{diary_id}")
-async def like_diary(diary_id: int, db: Session = Depends(get_db)):
-    diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
-    if not diary:
-        raise HTTPException(status_code=404, detail="Diary not found")
-    
-    # 좋아요 상태를 토글
-    diary.like = not diary.like
-    db.commit()
-    
-    # 좋아요 상태에 따라 메시지 변경
-    if diary.like:
-        return {
-            "status": 200,
-            "message": "좋아요 등록이 성공하였습니다.",
-            "data": {
-                "id": id,
-                "bookmark": diary.like
-            }
-        }
-    else:
-        return {
-            "status": 200,
-            "message": "좋아요 등록이 실패하였습니다.",
-            "data": {
-                "id": id,
-                "bookmark": diary.like
-            }
-        }
 
 # 전체/월별
 # /diaries/like 
@@ -632,3 +534,104 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             "message": "모든 좋아요를 누른 일기 조회 완료",
             "data": result,
     }
+
+
+
+@router.get("/{id}")
+async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    # 1. 다이어리를 조회
+    diary = db.query(DiaryModel).filter(DiaryModel.id == id).first()
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not diary:
+        raise HTTPException(status_code=404, detail=f"{id}번 다이어리를 찾을 수 없습니다.")
+    
+    image = db.query(Image).filter(
+        Image.diary_id == diary.id,
+        Image.is_active == True,
+        Image.is_deleted == False
+    ).first()  # 첫 번째 결과만 가져오기
+
+    # 이미지 URL이 없으면 None으로 설정
+    image_url = image.image_url if image else None
+
+    # 2. edit 파라미터가 없거나 false일 때는 다이어리만 반환
+    if not edit:
+        return {
+            "status": 200,
+            "message": f"{id}번 다이어리 조회 완료",
+            "data": {
+                "id": diary.id,
+                "date": diary.date,
+                "nickname": diary.nickname,
+                "mood": diary.mood,
+                "weather": diary.weather,
+                "title": diary.title,
+                "image": image_url,
+                "story": diary.story
+            }
+        }
+    
+    # 3. edit=true일 경우, 임시 다이어리 생성
+    temp_diary = TempDiary(
+        diary_id=diary.id,
+        user_id=user.id,
+        date=diary.date,
+        nickname=user.nickname,
+        mood=diary.mood,
+        weather=diary.weather,
+        title=diary.title,
+        image=image_url,
+        story=diary.story
+    )
+    db.add(temp_diary)
+    db.commit()
+    db.refresh(temp_diary)
+
+    # 4. 임시 다이어리의 temp_id와 함께 응답
+    return {
+        "status": 200,
+        "message": f"{id}번 다이어리 수정 준비 완료",
+        "data": {
+            "id": diary.id,
+            "date": diary.date,
+            "nickname": diary.nickname,
+            "mood": diary.mood,
+            "weather": diary.weather,
+            "title": diary.title,
+            "image": image_url,
+            "story": diary.story
+        },
+        "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
+    }
+
+@router.put("/like/{diary_id}")
+async def like_diary(diary_id: int, db: Session = Depends(get_db)):
+    diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
+    if not diary:
+        raise HTTPException(status_code=404, detail="Diary not found")
+    
+    # 좋아요 상태를 토글
+    diary.like = not diary.like
+    db.commit()
+    
+    # 좋아요 상태에 따라 메시지 변경
+    if diary.like:
+        return {
+            "status": 200,
+            "message": "좋아요 등록이 성공하였습니다.",
+            "data": {
+                "id": id,
+                "bookmark": diary.like
+            }
+        }
+    else:
+        return {
+            "status": 200,
+            "message": "좋아요 등록이 실패하였습니다.",
+            "data": {
+                "id": id,
+                "bookmark": diary.like
+            }
+        }
+

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.models import User, Token  # User와 Token 모델 import
 from app.database import get_db  # DB 세션을 가져오는 함수를 import합니다.
-from app.utils import get_current_user_id, get_dev_from_request
+from app.utils import get_current_user_id
 
 router = APIRouter(prefix="/auth")
 
@@ -18,8 +18,8 @@ KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
 KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
 JWT_SECRET = os.getenv("JWT_SECRET")  # JWT 비밀키
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_MINUTES = 300  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
-JWT_REFRESH_EXPIRATION_MINUTES = 60  # JWT 리프레시 토큰 유효 시간 60분
+JWT_EXPIRATION_MINUTES = 30  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
+JWT_REFRESH_EXPIRATION_MINUTES = 1  # JWT 리프레시 토큰 유효 시간 60분
 DDRAWRY_HOST = os.getenv("DDRAWRY_HOST")
 PROD_HOST = os.getenv("PROD_HOST")
 
@@ -43,6 +43,12 @@ async def kakao_callback(code: str, request: Request, db: Session = Depends(get_
 
     kakao_token_url = "https://kauth.kakao.com/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    # 쿼리 파라미터에서 'dev'가 있는지 확인
+    if 'dev' in request.url.query:
+        redirect_uri = LOCAL_REDIRECT_URI
+    else:
+        redirect_uri = PROD_REDIRECT_URI
+    # 인가 코드를 사용하여 액세스 토큰 요청
     data = {
         "grant_type": "authorization_code",
         "client_id": KAKAO_CLIENT_ID,
@@ -96,24 +102,22 @@ async def kakao_callback(code: str, request: Request, db: Session = Depends(get_
         # JWT 리프레시 토큰 생성
         jwt_refresh_payload = {
             "user_id": user.id,
-            "exp": datetime.utcnow() + timedelta(minutes=JWT_REFRESH_EXPIRATION_MINUTES),
+            "exp": datetime.utcnow() + timedelta(days=JWT_REFRESH_EXPIRATION_MINUTES),  # 1일로 설정
         }
         refresh_token = jwt.encode(jwt_refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-        # dev에 따라 리다이렉트 URL 설정
-        if dev == "1":
-            redirect_uri = DDRAWRY_HOST
-            secure = False
-        else:
-            redirect_uri = PROD_HOST
-            secure = True
+        # JSON 형태로 토큰 반환
+        return {
+            "status": 200,
+            "message": "토큰 발급 성공",
+            "data": {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "access_token_expiry": 30 * 60,  # 30분을 초 단위로 변환
+                "refresh_token_expiry": 24 * 60 * 60,  # 1일을 초 단위로 변환
+            }
+        }
 
-        response = RedirectResponse(url=redirect_uri)
-        response.set_cookie(key="access_token", value=access_token, httponly=True,  max_age=60, samesite='none', secure=secure)
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, max_age=3600 * 24 * 30, samesite='none', secure=secure)
-        return response
-
-    
 @router.get("/kakao/logout")
 async def kakao_logout(response: Response, access_token: str = Cookie(None), db: Session = Depends(get_db)):
     if not access_token:
@@ -154,8 +158,10 @@ async def kakao_logout(response: Response, access_token: str = Cookie(None), db:
         db.commit()
 
         return {"message": "Kakao에서 성공적으로 로그아웃되었습니다."}    
+    
 
 from jwt import PyJWTError  # PyJWTError를 import
+
 @router.get("/refresh")
 async def refresh_token(request: Request):
     refresh_token = request.cookies.get("refresh_token")
@@ -171,19 +177,24 @@ async def refresh_token(request: Request):
         # 새로운 액세스 토큰 생성
         new_access_payload = {
             "user_id": user_id,
-            "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),
+            "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),  # 30분으로 설정
         }
         new_access_token = jwt.encode(new_access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-        # 새로운 액세스 토큰을 쿠키에 저장
-        response = JSONResponse(content={"access_token": new_access_token})  # JSON 응답 생성
-        response.set_cookie(key="access_token", value=new_access_token, httponly=True, max_age=60)
-
-        return response  # 쿠키와 JSON 응답을 함께 반환
+        # JSON 형태로 토큰 및 만료 시간 반환
+        return {
+            "status": 200,
+            "message": "토큰 갱신 성공",
+            "data": {
+                "access_token": new_access_token,
+                "access_token_expiry": 30 * 60,  # 30분을 초 단위로 변환
+            }
+        }
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Refresh token has expired")
     except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
 
 
 
