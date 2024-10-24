@@ -75,7 +75,6 @@ async def edit_diary(diary_id: int, diary: DiaryCreate, db: Session = Depends(ge
         }
     }
 
-
 @router.put("/temp/{temp_id}")
 async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db)):
     # 이미 존재하는 temp_diary가 있는지 확인
@@ -84,22 +83,22 @@ async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db)):
     # 존재하지 않는다면 404 에러를 발생시킴
     if not existing_temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
-    
+
     # 필요한 경우에만 필드를 업데이트
-    if "title" in diary and diary["title"] is not None:
-        existing_temp_diary.title = diary["title"]
-    if "story" in diary and diary["story"] is not None:
-        existing_temp_diary.story = diary["story"]
-    if "weather" in diary and diary["weather"] is not None:
-        existing_temp_diary.weather = WeatherEnum[diary["weather"].lower()].value  # Enum의 정수 값으로 저장
-    if "mood" in diary and diary["mood"] is not None:
-        existing_temp_diary.mood = MoodEnum[diary["mood"].lower()].value  # Enum의 정수 값으로 저장
-    if "date" in diary and diary["date"] is not None:
-        existing_temp_diary.date = diary["date"]
-    if "nickname" in diary and diary["nickname"] is not None:
-        existing_temp_diary.nickname = diary["nickname"]
-    if "image" in diary and diary["image"] is not None:
-        existing_temp_diary.image = diary["image"]
+    if "title" in diary:
+        existing_temp_diary.title = diary["title"] if diary["title"] != "" else None
+    if "story" in diary:
+        existing_temp_diary.story = diary["story"] if diary["story"] != "" else None
+    if "weather" in diary:
+        existing_temp_diary.weather = WeatherEnum[diary["weather"].lower()].value if diary["weather"] != "" else None
+    if "mood" in diary:
+        existing_temp_diary.mood = MoodEnum[diary["mood"].lower()].value if diary["mood"] != "" else None
+    if "date" in diary:
+        existing_temp_diary.date = diary["date"] if diary["date"] != "" else None
+    if "nickname" in diary:
+        existing_temp_diary.nickname = diary["nickname"] if diary["nickname"] != "" else None
+    if "image" in diary:
+        existing_temp_diary.image = diary["image"] if diary["image"] != "" else None
 
     # 수정된 시간 기록
     existing_temp_diary.updated_at = datetime.now(timezone.utc)
@@ -114,6 +113,7 @@ async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db)):
             "temp_id": existing_temp_diary.id
         }
     }
+
 
 
 @router.get("/temp/{temp_id}")
@@ -132,27 +132,27 @@ async def get_temp_diary(
     if not temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
 
-    # mood와 weather 값을 Enum 이름으로 변환
-    mood_str = MoodEnum(temp_diary.mood).name
-    weather_str = WeatherEnum(temp_diary.weather).name
+    # 필요한 데이터 반환 (NULL 값은 포함하지 않음)
+    response_data = {}
 
-    # 필요한 데이터 반환
-    response_data = {
-        "temp_id": temp_diary.id,
-        "nickname": user.nickname,
-        "title": temp_diary.title,
-        "weather": mood_str.lower(),
-        "mood": weather_str.lower(),
-        "story": temp_diary.story,
-    }
-
-    # null 값을 빈 문자열로 변환
-    clean_response_data = replace_null_with_empty_str(response_data)
+    # temp_diary의 각 필드가 존재할 경우에만 추가
+    if temp_diary.id is not None:
+        response_data["temp_id"] = temp_diary.id
+    if user.nickname is not None:
+        response_data["nickname"] = user.nickname
+    if temp_diary.title is not None:
+        response_data["title"] = temp_diary.title
+    if temp_diary.mood is not None:
+        response_data["mood"] = MoodEnum(temp_diary.mood).name.lower()
+    if temp_diary.weather is not None:
+        response_data["weather"] = WeatherEnum(temp_diary.weather).name.lower()
+    if temp_diary.story is not None:
+        response_data["story"] = temp_diary.story
 
     return {
         "status": 200,
         "message": "임시 다이어리를 조회 완료.",
-        "data": clean_response_data  # 변환된 데이터를 반환
+        "data": response_data  # 변환된 데이터를 반환
     }
 
 @router.post("/cancel")
@@ -453,6 +453,90 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
     }
 
 
+
+
+# 전체/월별
+# /diaries/like 
+# 좋아요를 누른 다이어리들 조회 API
+@router.get("/like")
+async def get_like_diaries(type: str, date: str = None, db: Session = Depends(get_db)): 
+    if type == "month" and date and len(date) == 6:
+        year = int(date[:4])
+        month = int(date[4:])
+        
+        # 로그 추가
+        print(f"Querying for year: {year}, month: {month}")
+
+        # 해당 연도와 월에 해당하는 좋아요 누른 다이어리를 조회
+        liked_diaries = db.query(DiaryModel).filter(
+            DiaryModel.like == True,
+            DiaryModel.date.between(f"{year}-{month:02d}-01", f"{year}-{month:02d}-30")  # 30일까지 확인
+        ).all()
+    
+        if not liked_diaries:
+            raise HTTPException(status_code=404, detail="해당 월에 좋아요를 누른 다이어리가 없습니다.")
+    
+        # 다이어리 정보를 반환할 형식으로 변환
+        result = []
+        for diary in liked_diaries:
+            # 이미지 URL 가져오기 (하나만 가져오기)
+            image = db.query(Image).filter(
+                Image.diary_id == diary.id,
+                Image.is_active == True,
+                Image.is_deleted == False
+            ).first()  # 첫 번째 결과만 가져오기
+
+            # 이미지 URL이 없으면 None으로 설정
+            image_url = image.image_url if image else None
+
+            result.append({
+                "id": diary.id,
+                "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 형식 변환
+                "title": diary.title,
+                "image": image_url,  # 단일 이미지 URL 또는 None
+                "bookmark": 1 if diary.like else 0  # 좋아요 상태를 int(1 또는 0)로 반환
+            })
+        
+        return {
+            "status": 200,
+            "message": f"{year}년 {month}월 좋아요 누른 일기 조회 완료",
+            "data": result,
+        }
+    elif type == "all":
+        # 모든 좋아요를 누른 다이어리를 날짜순으로 조회
+        liked_diaries = db.query(DiaryModel).filter(DiaryModel.like == True).order_by(DiaryModel.date).all()
+
+        if not liked_diaries:
+            raise HTTPException(status_code=404, detail="좋아요를 누른 다이어리가 없습니다.")
+        
+        result = []
+        for diary in liked_diaries:
+            # 이미지 URL 가져오기 (하나만 가져오기)
+            image = db.query(Image).filter(
+                Image.diary_id == diary.id,
+                Image.is_active == True,
+                Image.is_deleted == False
+            ).first()  # 첫 번째 결과만 가져오기
+
+            # 이미지 URL이 없으면 None으로 설정
+            image_url = image.image_url if image else None
+
+            result.append({
+                "id": diary.id,
+                "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 형식 변환
+                "title": diary.title,
+                "image": image_url,  # 단일 이미지 URL 또는 None
+                "bookmark": 1 if diary.like else 0  # 좋아요 상태를 int(1 또는 0)로 반환
+            })
+        
+        return {
+            "status": 200,
+            "message": "모든 좋아요를 누른 일기 조회 완료",
+            "data": result,
+    }
+
+
+
 @router.get("/{id}")
 async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     # 1. 다이어리를 조회
@@ -519,85 +603,6 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
             "story": diary.story
         },
         "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
-    }
-
-
-# 전체/월별
-# /diaries/like 
-# 좋아요를 누른 다이어리들 조회 API
-@router.get("/like")
-async def get_like_diaries(type: str, date: str = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)): 
-    if type == "month" and date and len(date) == 6:
-        year = int(date[:4])
-        month = int(date[4:])
-
-        # 해당 연도와 월에 해당하는 좋아요 누른 다이어리를 조회
-        liked_diaries = db.query(DiaryModel).filter(
-            DiaryModel.user_id == user_id,  # 해당 유저의 다이어리만
-            DiaryModel.like == True,
-            DiaryModel.date.between(f"{year}-{month:02d}-01", f"{year}-{month:02d}-30")  # 30일까지 확인
-        ).all()
-    
-        if not liked_diaries:
-            raise HTTPException(status_code=404, detail="해당 월에 좋아요를 누른 다이어리가 없습니다.")
-    
-        # 다이어리 정보를 반환할 형식으로 변환
-        result = []
-        for diary in liked_diaries:
-            # 이미지 URL 가져오기 (하나만 가져오기)
-            image = db.query(Image).filter(
-                Image.diary_id == diary.id,
-                Image.is_active == True,
-                Image.is_deleted == False
-            ).first()  # 첫 번째 결과만 가져오기
-
-            # 이미지 URL이 없으면 None으로 설정
-            image_url = image.image_url if image else None
-
-            result.append({
-                "id": diary.id,
-                "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 형식 변환
-                "title": diary.title,
-                "image": image_url,  # 단일 이미지 URL 또는 None
-                "bookmark": 1 if diary.like else 0  # 좋아요 상태를 int(1 또는 0)로 반환
-            })
-        
-        return {
-            "status": 200,
-            "message": f"{year}년 {month}월 좋아요 누른 일기 조회 완료",
-            "data": result,
-        }
-    elif type == "all":
-        # 모든 좋아요를 누른 다이어리를 날짜순으로 조회
-        liked_diaries = db.query(DiaryModel).filter(DiaryModel.like == True).order_by(DiaryModel.date).all()
-
-        if not liked_diaries:
-            raise HTTPException(status_code=404, detail="좋아요를 누른 다이어리가 없습니다.")
-        
-        result = []
-        for diary in liked_diaries:
-            # 이미지 URL 가져오기 (하나만 가져오기)
-            image = db.query(Image).filter(
-                Image.diary_id == diary.id,
-                Image.is_active == True,
-                Image.is_deleted == False
-            ).first()  # 첫 번째 결과만 가져오기
-
-            # 이미지 URL이 없으면 None으로 설정
-            image_url = image.image_url if image else None
-
-            result.append({
-                "id": diary.id,
-                "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 형식 변환
-                "title": diary.title,
-                "image": image_url,  # 단일 이미지 URL 또는 None
-                "bookmark": 1 if diary.like else 0  # 좋아요 상태를 int(1 또는 0)로 반환
-            })
-        
-        return {
-            "status": 200,
-            "message": "모든 좋아요를 누른 일기 조회 완료",
-            "data": result,
     }
 
 @router.put("/like/{diary_id}")
