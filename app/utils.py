@@ -26,7 +26,7 @@ def get_current_user_id(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="잘못된 Authorization 헤더 형식입니다.")
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="JWT 토큰이 만료되었습니다.")
-    except jwt.JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="유효하지 않은 JWT 토큰입니다.")
 
 

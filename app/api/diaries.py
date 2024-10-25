@@ -459,7 +459,7 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
 # /diaries/like 
 # 좋아요를 누른 다이어리들 조회 API
 @router.get("/like")
-async def get_like_diaries(type: str, date: str = None, db: Session = Depends(get_db)): 
+async def get_like_diaries(type: str, date: str = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)): 
     if type == "month" and date and len(date) == 6:
         year = int(date[:4])
         month = int(date[4:])
@@ -470,6 +470,7 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
         # 해당 연도와 월에 해당하는 좋아요 누른 다이어리를 조회
         liked_diaries = db.query(DiaryModel).filter(
             DiaryModel.like == True,
+            DiaryModel.user_id == user_id,  # user_id가 일치하는지 확인
             DiaryModel.date.between(f"{year}-{month:02d}-01", f"{year}-{month:02d}-30")  # 30일까지 확인
         ).all()
     
