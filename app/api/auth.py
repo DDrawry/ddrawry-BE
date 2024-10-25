@@ -25,9 +25,7 @@ PROD_REDIRECT_URI = os.getenv("PROD_REDIRECT_URI")
 
 
 @router.get("/kakao/callback")
-async def kakao_callback(code: str, request: Request, db: Session = Depends(get_db)):
-    # 요청에서 dev 값을 추출
-    dev = request.query_params.get("dev", "0")  # 기본값은 "0"으로 설정
+async def kakao_callback(code: str, request: Request, response: Response, db: Session = Depends(get_db)):
 
     kakao_token_url = "https://kauth.kakao.com/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -40,7 +38,7 @@ async def kakao_callback(code: str, request: Request, db: Session = Depends(get_
     data = {
         "grant_type": "authorization_code",
         "client_id": KAKAO_CLIENT_ID,
-        "redirect_uri": f"{KAKAO_REDIRECT_URI}?dev={dev}",  # dev 값을 포함
+        "redirect_uri": redirect_uri,  # dev 값을 포함
         "code": code,
     }
 
@@ -94,17 +92,33 @@ async def kakao_callback(code: str, request: Request, db: Session = Depends(get_
         }
         refresh_token = jwt.encode(jwt_refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-        # JSON 형태로 토큰 반환
-        return {
-            "status": 200,
-            "message": "토큰 발급 성공",
-            "data": {
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "access_token_expiry": 30 * 60,  # 30분을 초 단위로 변환
-                "refresh_token_expiry": 24 * 60 * 60,  # 1일을 초 단위로 변환
+        if 'dev' in request.url.query:
+            # dev 환경에서는 액세스 토큰을 JSON으로, 리프레시 토큰을 HTTP 전용 쿠키로 전달
+            response.set_cookie(
+                key="refresh_token",
+                value=refresh_token,
+                httponly=True,
+                max_age=24 * 60 * 60,
+                samesite="none",
+                secure=True
+            )
+            return {
+                "status": 200,
+                "message": "토큰 발급 성공",
+                "data": {
+                    "access_token": access_token,
+                }
             }
-        }
+        else:
+            # dev가 아닌 경우 두 토큰을 JSON에 포함하여 전달
+            return {
+                "status": 200,
+                "message": "토큰 발급 성공",
+                "data": {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                }
+            }
 
 @router.get("/kakao/logout")
 async def kakao_logout(response: Response, access_token: str = Cookie(None), db: Session = Depends(get_db)):
