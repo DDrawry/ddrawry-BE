@@ -92,33 +92,23 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
         }
         refresh_token = jwt.encode(jwt_refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-        if 'dev' in request.url.query:
-            # dev 환경에서는 액세스 토큰을 JSON으로, 리프레시 토큰을 HTTP 전용 쿠키로 전달
-            response.set_cookie(
-                key="refresh_token",
-                value=refresh_token,
-                httponly=True,
-                max_age=24 * 60 * 60,
-                samesite="none",
-                secure=True
-            )
-            return {
-                "status": 200,
-                "message": "토큰 발급 성공",
-                "data": {
-                    "access_token": access_token,
-                }
+        # dev 환경에서는 액세스 토큰을 JSON으로, 리프레시 토큰을 HTTP 전용 쿠키로 전달
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            max_age=24 * 60 * 60,
+            samesite="none",
+            secure=True
+        )
+
+        return {
+            "status": 200,
+            "message": "토큰 발급 성공",
+            "data": {
+                "access_token": access_token,
             }
-        else:
-            # dev가 아닌 경우 두 토큰을 JSON에 포함하여 전달
-            return {
-                "status": 200,
-                "message": "토큰 발급 성공",
-                "data": {
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
-                }
-            }
+        }
 
 @router.get("/kakao/logout")
 async def kakao_logout(response: Response, access_token: str = Cookie(None), db: Session = Depends(get_db)):
@@ -188,8 +178,7 @@ async def refresh_token(request: Request):
             "status": 200,
             "message": "토큰 갱신 성공",
             "data": {
-                "access_token": new_access_token,
-                "access_token_expiry": 30 * 60,  # 30분을 초 단위로 변환
+                "access_token": new_access_token
             }
         }
     except jwt.ExpiredSignatureError:
