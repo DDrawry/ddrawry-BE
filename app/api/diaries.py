@@ -394,7 +394,7 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
     diaries = db.query(DiaryModel).options(joinedload(DiaryModel.images)).filter(
         func.DATE_FORMAT(DiaryModel.date, "%Y") == year,
         func.DATE_FORMAT(DiaryModel.date, "%m") == month,
-        DiaryModel.is_deleted == False
+        DiaryModel.is_deleted == False  # 삭제된 다이어리를 제외
     ).all()
 
     # 다이어리가 없음
@@ -406,7 +406,7 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
         }
 
     # 캘린더형 조회 (title 없이)
-    if type == "calender":
+    if type == "calendar":  # 오타 수정: 'calender' → 'calendar'
         result = [
             {
                 "id": diary.id,
@@ -433,7 +433,7 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
     else:
         return {
             "status": 400,
-            "message": "잘못된 type 값입니다. 'list' 또는 'calender'를 사용하세요."
+            "message": "잘못된 type 값입니다. 'list' 또는 'calendar'를 사용하세요."
         }
 
     return {
@@ -454,10 +454,11 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
         year = int(date[:4])
         month = int(date[4:])
 
-        # 해당 연도와 월에 해당하는 좋아요 누른 다이어리를 조회
+        # 해당 연도와 월에 해당하는 좋아요 누른 다이어리를 조회 (삭제되지 않은 다이어리만 포함)
         liked_diaries = db.query(DiaryModel).filter(
             DiaryModel.like == True,
             DiaryModel.user_id == user_id,  # user_id가 일치하는지 확인
+            DiaryModel.is_deleted == False,  # 삭제되지 않은 다이어리만 포함
             DiaryModel.date.between(f"{year}-{month:02d}-01", f"{year}-{month:02d}-30")  # 30일까지 확인
         ).all()
     
@@ -468,7 +469,6 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
                 "data": []
             }
 
-    
         # 다이어리 정보를 반환할 형식으로 변환
         result = []
         for diary in liked_diaries:
@@ -496,8 +496,11 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             "data": result,
         }
     elif type == "all":
-        # 모든 좋아요를 누른 다이어리를 날짜순으로 조회
-        liked_diaries = db.query(DiaryModel).filter(DiaryModel.like == True).order_by(DiaryModel.date).all()
+        # 모든 좋아요를 누른 다이어리를 날짜순으로 조회 (삭제되지 않은 다이어리만 포함)
+        liked_diaries = db.query(DiaryModel).filter(
+            DiaryModel.like == True,
+            DiaryModel.is_deleted == False  # 삭제되지 않은 다이어리만 포함
+        ).order_by(DiaryModel.date).all()
 
         if not liked_diaries:
             raise HTTPException(status_code=404, detail="좋아요를 누른 다이어리가 없습니다.")
@@ -526,7 +529,8 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             "status": 200,
             "message": "모든 좋아요를 누른 일기 조회 완료",
             "data": result,
-    }
+        }
+
 
 
 
