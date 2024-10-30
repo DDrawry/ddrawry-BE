@@ -45,7 +45,7 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
     async with httpx.AsyncClient() as client:
         token_response = await client.post(kakao_token_url, headers=headers, data=data)
         if token_response.status_code != 200:
-            raise HTTPException(status_code=token_response.status_code, detail="Failed to get Kakao token")
+            raise HTTPException(status_code=401, detail="Kakao 토큰 요청 실패")
 
         token_json = token_response.json()
         kakao_access_token = token_json.get("access_token")
@@ -56,7 +56,7 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
         user_response = await client.get(user_info_url, headers=user_headers)
 
         if user_response.status_code != 200:
-            raise HTTPException(status_code=user_response.status_code, detail="Failed to get user info")
+            raise HTTPException(status_code=403, detail="Kakao 사용자 정보 요청 실패")
 
         user_info = user_response.json()
         kakao_id = user_info.get("id")

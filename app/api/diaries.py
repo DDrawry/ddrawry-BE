@@ -371,8 +371,9 @@ async def search_diary(keyword: str, db: Session = Depends(get_db)):
 
     if not diaries:
         return {
-            "status": 404,
-            "message": f"'{keyword}'에 대한 검색 결과가 없습니다."
+            "status": 200,
+            "message": f"'{keyword}'에 대한 검색 결과가 없습니다.",
+            "data": []
         }
 
     results = []
@@ -411,8 +412,9 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
     # 다이어리가 없음
     if not diaries:
         return {
-            "status": 404,
-            "message": f"{year}-{month}에 해당하는 다이어리가 없습니다."
+            "status": 200,
+            "message": f"{year}-{month}에 해당하는 다이어리가 없습니다.",
+            "data": []
         }
 
     # 캘린더형 조회 (title 없이)
@@ -463,9 +465,6 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
     if type == "month" and date and len(date) == 6:
         year = int(date[:4])
         month = int(date[4:])
-        
-        # 로그 추가
-        print(f"Querying for year: {year}, month: {month}")
 
         # 해당 연도와 월에 해당하는 좋아요 누른 다이어리를 조회
         liked_diaries = db.query(DiaryModel).filter(
@@ -474,8 +473,13 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             DiaryModel.date.between(f"{year}-{month:02d}-01", f"{year}-{month:02d}-30")  # 30일까지 확인
         ).all()
     
-        if not liked_diaries:
-            raise HTTPException(status_code=404, detail="해당 월에 좋아요를 누른 다이어리가 없습니다.")
+        if not liked_diaries:            
+            return {
+                "status": 200,
+                "message": "해당 월에 좋아요를 누른 다이어리가 없습니다.",
+                "data": []
+            }
+
     
         # 다이어리 정보를 반환할 형식으로 변환
         result = []
@@ -553,6 +557,13 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
         Image.is_deleted == False
     ).first()  # 첫 번째 결과만 가져오기
 
+    try:
+        # mood와 weather 값을 Enum을 통해 문자열로 변환하여 반환
+        mood = MoodEnum(diary.mood).name  # 정수를 문자열로 변환
+        weather = WeatherEnum(diary.weather).name  # 정수를 문자열로 변환
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid mood or weather value")
+    
     # 이미지 URL이 없으면 None으로 설정
     image_url = image.image_url if image else None
 
@@ -565,8 +576,8 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
                 "id": diary.id,
                 "date": diary.date,
                 "nickname": diary.nickname,
-                "mood": diary.mood,
-                "weather": diary.weather,
+                "mood": mood,
+                "weather": weather,
                 "title": diary.title,
                 "image": image_url,
                 "story": diary.story
@@ -597,8 +608,8 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
             "id": diary.id,
             "date": diary.date,
             "nickname": diary.nickname,
-            "mood": diary.mood,
-            "weather": diary.weather,
+            "mood": mood,
+            "weather": weather,
             "title": diary.title,
             "image": image_url,
             "story": diary.story
