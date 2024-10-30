@@ -82,13 +82,16 @@ async def edit_diary(
     }
 
 @router.put("/temp/{temp_id}")
-async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db)):
+async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     # 이미 존재하는 temp_diary가 있는지 확인
     existing_temp_diary = db.query(TempDiary).filter(TempDiary.id == temp_id).first()
 
     # 존재하지 않는다면 404 에러를 발생시킴
     if not existing_temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
+    
+    if existing_temp_diary.user_id != user_id:
+        raise HTTPException(status_code=403, detail="해당 사용자가 아닙니다.")
 
     # 필요한 경우에만 필드를 업데이트
     if "title" in diary:
@@ -128,6 +131,7 @@ async def get_temp_diary(
     db: Session = Depends(get_db), 
     user_id: int = Depends(get_current_user_id)
 ):
+    
     # 현재 로그인한 유저 정보를 조회
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -142,8 +146,11 @@ async def get_temp_diary(
     response_data = {}
 
     # temp_diary의 각 필드가 존재할 경우에만 추가
+    
     if temp_diary.id is not None:
         response_data["temp_id"] = temp_diary.id
+    if temp_diary.date is not None:  # temp_diary에 date가 존재하는지 확인
+        response_data["date"] = temp_diary.date  # date 컬럼 값을 추가
     if user.nickname is not None:
         response_data["nickname"] = user.nickname
     if temp_diary.title is not None:
@@ -340,10 +347,13 @@ async def delete_diary(
 
 # /diaries/search/{keyword}
 @router.get("/search")
-async def search_diary(keyword: str, db: Session = Depends(get_db)):
+async def search_diary(keyword: str, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     if keyword == "":
         # 빈 키워드일 경우 모든 다이어리 조회
-        diaries = db.query(DiaryModel).filter(DiaryModel.is_deleted == False).all()
+        diaries = db.query(DiaryModel).filter(
+            DiaryModel.is_deleted == False,
+            DiaryModel.user_id == user_id  # 현재 사용자의 다이어리만 조회
+        ).all()
         return {
             "status": 200,
             "message": "모든 다이어리 조회 완료",
@@ -354,7 +364,8 @@ async def search_diary(keyword: str, db: Session = Depends(get_db)):
     diaries = db.query(DiaryModel).filter(
         (DiaryModel.title.like(f"%{keyword}%")) |  # 제목에서 키워드 검색
         (DiaryModel.story.like(f"%{keyword}%")),   # 내용에서 키워드 검색
-        (DiaryModel.is_deleted == False)             # 삭제되지 않은 다이어리
+        (DiaryModel.is_deleted == False),           # 삭제되지 않은 다이어리
+        (DiaryModel.user_id == user_id)             # 현재 사용자의 다이어리만 조회
     ).all()
 
     if not diaries:
@@ -386,7 +397,7 @@ async def search_diary(keyword: str, db: Session = Depends(get_db)):
 
 # /diaries/main?type=calender&date=202406
 @router.get("/main")
-async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
+async def get_diaries(type: str, date: str, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     year = date[:4]
     month = date[4:]
 
@@ -394,7 +405,8 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db)):
     diaries = db.query(DiaryModel).options(joinedload(DiaryModel.images)).filter(
         func.DATE_FORMAT(DiaryModel.date, "%Y") == year,
         func.DATE_FORMAT(DiaryModel.date, "%m") == month,
-        DiaryModel.is_deleted == False  # 삭제된 다이어리를 제외
+        DiaryModel.is_deleted == False,  # 삭제된 다이어리를 제외
+        DiaryModel.user_id == user_id     # 현재 사용자의 다이어리만 조회
     ).all()
 
     # 다이어리가 없음
@@ -522,7 +534,7 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
                 "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 형식 변환
                 "title": diary.title,
                 "image": image_url,  # 단일 이미지 URL 또는 None
-                "bookmark": 1 if diary.like else 0  # 좋아요 상태를 int(1 또는 0)로 반환
+                "bookmark": True if diary.like else False  # 좋아요 상태를 int(1 또는 0)로 반환
             })
         
         return {
@@ -572,7 +584,8 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
                 "weather": weather,
                 "title": diary.title,
                 "image": image_url,
-                "story": diary.story
+                "story": diary.story,
+                "bookmark": diary.like
             }
         }
     
@@ -586,7 +599,8 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
         weather=diary.weather,
         title=diary.title,
         image=image_url,
-        story=diary.story
+        story=diary.story,
+        like=diary.like
     )
     db.add(temp_diary)
     db.commit()
@@ -597,23 +611,18 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
         "status": 200,
         "message": f"{id}번 다이어리 수정 준비 완료",
         "data": {
-            "id": diary.id,
-            "date": diary.date,
-            "nickname": diary.nickname,
-            "mood": mood,
-            "weather": weather,
-            "title": diary.title,
-            "image": image_url,
-            "story": diary.story
+            "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
         },
-        "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
     }
 
 @router.put("/like/{diary_id}")
-async def like_diary(diary_id: int, db: Session = Depends(get_db)):
+async def like_diary(diary_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
     if not diary:
         raise HTTPException(status_code=404, detail="Diary not found")
+    
+    if diary.user_id != user_id:
+        raise HTTPException(status_code=403, detail="해당 사용자가 아닙니다.")
     
     # 좋아요 상태를 토글
     diary.like = not diary.like
@@ -625,16 +634,16 @@ async def like_diary(diary_id: int, db: Session = Depends(get_db)):
             "status": 200,
             "message": "좋아요 등록이 성공하였습니다.",
             "data": {
-                "id": id,
+                "id": diary.id,
                 "bookmark": diary.like
             }
         }
     else:
         return {
             "status": 200,
-            "message": "좋아요 등록이 실패하였습니다.",
+            "message": "좋아요 등록이 취소되었습니다.",
             "data": {
-                "id": id,
+                "id": diary.id,
                 "bookmark": diary.like
             }
         }
