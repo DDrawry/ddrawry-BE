@@ -41,12 +41,19 @@ async def new_diary(
 
 # /diaries/{diary_id}
 @router.put("/{diary_id}")
-async def edit_diary(diary_id: int, diary: DiaryCreate, db: Session = Depends(get_db)):
-    # 기존 다이어리 조회
+async def edit_diary(
+    diary_id: int, 
+    diary: DiaryCreate, 
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_current_user_id)
+):
     existing_diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
 
     if not existing_diary:
         raise HTTPException(status_code=404, detail="Diary not found")
+
+    if existing_diary.user_id != user_id:  # 소유자 검증 로직 추가
+        raise HTTPException(status_code=403, detail="You do not have permission to edit this diary")
 
     # 다이어리 업데이트
     existing_diary.title = diary.title
@@ -57,7 +64,6 @@ async def edit_diary(diary_id: int, diary: DiaryCreate, db: Session = Depends(ge
     existing_diary.nickname = diary.nickname
     existing_diary.updated_at = datetime.now(timezone.utc)  
 
-    # 변경사항을 DB에 커밋
     db.commit()
     db.refresh(existing_diary)
 
@@ -218,37 +224,6 @@ async def update_temp_diary_status(
             "data": {"temp_id": new_temp_diary.id}
         }
 
-# @router.get("/diary/{diary_id}")
-# async def get_diary(diary_id: int, db: Session = Depends(get_db)):
-#     # 다이어리 ID로 조회
-#     try:
-#         diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail="서버 오류 발생")
-
-#     if not diary:
-#         raise HTTPException(status_code=404, detail="Diary not found")
-    
-#     try:
-#         # mood와 weather 값을 Enum을 통해 문자열로 변환하여 반환
-#         mood = MoodEnum(diary.mood).name  # 정수를 문자열로 변환
-#         weather = WeatherEnum(diary.weather).name  # 정수를 문자열로 변환
-#     except ValueError:
-#         raise HTTPException(status_code=400, detail="Invalid mood or weather value")
-    
-#     return {
-#         "id": diary.id,
-#         "user_id": diary.user_id,
-#         "title": diary.title,
-#         "story": diary.story,
-#         "mood": mood,
-#         "weather": weather,
-#         "date": diary.date,
-#         "nickname": diary.nickname,
-#         "created_at": diary.created_at,
-#         "updated_at": diary.updated_at
-#     }
-
 
 # /diaries?date=20240813
 @router.get("/")
@@ -334,13 +309,25 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
 
 # /diaries/{id}
 @router.delete("/{diary_id}")
-async def delete_diary(diary_id: int, db: Session = Depends(get_db)):
-    diary_to_delete = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
-    
+async def delete_diary(
+    diary_id: int,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)  # 현재 사용자 ID 가져오기
+):
+    # 삭제할 다이어리 조회 (is_deleted가 False인 경우만)
+    diary_to_delete = db.query(DiaryModel).filter(
+        DiaryModel.id == diary_id,
+        DiaryModel.is_deleted.is_(False)
+    ).first()
+
     if not diary_to_delete:
-        raise HTTPException(status_code=404, detail="Diary not found")
-    
-    # 실제 삭제 대신 논리적 삭제 처리
+        raise HTTPException(status_code=404, detail="Diary not found or already deleted")
+
+    # 현재 사용자가 해당 다이어리의 소유자인지 확인
+    if diary_to_delete.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this diary")
+
+    # 논리적 삭제 처리
     diary_to_delete.is_deleted = True
     db.commit()
 
@@ -349,6 +336,7 @@ async def delete_diary(diary_id: int, db: Session = Depends(get_db)):
         "message": "다이어리 삭제 성공",
         "id": diary_id
     }
+
 
 # /diaries/search/{keyword}
 @router.get("/search")
