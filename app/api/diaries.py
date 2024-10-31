@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Request, Query, HTTPException, Depends
 from typing import List, Optional
 from fastapi.responses import JSONResponse
 from schemas.schema import MoodEnum, WeatherEnum, Diary, TempDiarySchema, Settings, DiaryCreate, StatusUpdateRequest
+from fastapi import APIRouter, Request, Query, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.models import Diary as DiaryModel, Image, User, TempDiary
 from ..utils import get_current_user_id, replace_null_with_empty_str
@@ -183,7 +183,8 @@ async def update_temp_diary_status(
     # user_id와 date가 일치하는 temp_diary 찾기
     temp_diary = db.query(TempDiary).filter(
         TempDiary.user_id == user_id,
-        TempDiary.date == formatted_date
+        TempDiary.date == formatted_date,
+        TempDiary.status == 0
     ).first()
 
     if not temp_diary:
@@ -233,7 +234,7 @@ async def update_temp_diary_status(
 
 
 # /diaries?date=20240813
-@router.get("/")
+@router.get("")
 async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     # 'YYYYMMDD' 형식을 'YYYY-MM-DD' 형식으로 변환
     try:
@@ -242,29 +243,17 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
         raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다. YYYYMMDD 형식을 사용하세요.")
     
     # diary에서 해당 날짜와 user_id로 조회
-    # diary = db.query(DiaryModel).filter(
-    #     DiaryModel.date == formatted_date,
-    #     DiaryModel.user_id == user_id,
-    #     DiaryModel.is_deleted == False
-    # ).first()
+    diary = db.query(DiaryModel).filter(
+        DiaryModel.date == formatted_date,
+        DiaryModel.user_id == user_id,
+        DiaryModel.is_deleted == False
+    ).first()
 
     # user_id로 사용자 nickname 조회
     user = db.query(User).filter(User.id == user_id).first()
 
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-
-    # diary가 존재할 경우
-    # if diary:
-    #     return {
-    #         "status": 200,
-    #         "message": "작성한 다이어리가 존재합니다.",
-    #         "is_exist": True,
-    #         "data": {
-    #             "date": formatted_date,
-    #             "diary_id": diary.id
-    #         },
-    #     }
 
     # temp_diary에서 해당 날짜와 user_id로 조회
     temp_diary = db.query(TempDiary).filter(
@@ -278,41 +267,50 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
         return {
             "status": 200,
             "message": "임시 다이어리가 이미 존재합니다.",
-            "is_exist": False,
-            "is_temp_exist": True,
-            "temp_data": {
-                "date": formatted_date,
+            "data": {
                 "temp_id": temp_diary.id,
+                "is_temp_exist": True
             }
         }
 
-    # 다이어리와 temp_diary 모두 존재하지 않을 경우 새로운 temp_diary 생성
-    new_temp_diary = TempDiary(
-        user_id=user_id,
-        date=formatted_date,
-        title=None,
-        weather=None,
-        mood=None,
-        nickname=user.nickname,
-        story=None
-    )
+    # 다이어리가 존재할 경우 다이어리의 내용을 바탕으로 임시 다이어리 생성
+    if diary:
+        new_temp_diary = TempDiary(
+            user_id=user_id,
+            diary_id=diary.id,  # 기존 다이어리 ID 추가
+            date=formatted_date,
+            title=diary.title,
+            weather=diary.weather,
+            mood=diary.mood,
+            nickname=diary.nickname,
+            story=diary.story
+        )
+        message = "기존 다이어리 내용을 기반으로 새 임시 다이어리가 생성되었습니다."
+    else:
+        # 다이어리가 없을 경우 빈 임시 다이어리 생성
+        new_temp_diary = TempDiary(
+            user_id=user_id,
+            date=formatted_date,
+            title=None,
+            weather=None,
+            mood=None,
+            nickname=user.nickname,
+            story=None
+        )
+        message = "임시 다이어리가 존재하지 않아 새로 생성되었습니다."
     
     db.add(new_temp_diary)
     db.commit()
     db.refresh(new_temp_diary)
 
-    # 임시 다이어리 생성 시 temp_id만 반환
     return {
         "status": 200,
-        "message": "임시 다이어리가 존재하지 않아 새로 생성되었습니다.",
-        "is_exist": False,
-        "is_temp_exist": False,
+        "message": message,
         "data": {
-            "date": formatted_date,
-            "temp_id": new_temp_diary.id
+            "temp_id": new_temp_diary.id,
+            "is_temp_exist": False
         }
     }
-
 
 # /diaries/{id}
 @router.delete("/{diary_id}")
