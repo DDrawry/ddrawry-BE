@@ -242,11 +242,11 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
         raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다. YYYYMMDD 형식을 사용하세요.")
     
     # diary에서 해당 날짜와 user_id로 조회
-    diary = db.query(DiaryModel).filter(
-        DiaryModel.date == formatted_date,
-        DiaryModel.user_id == user_id,
-        DiaryModel.is_deleted == False
-    ).first()
+    # diary = db.query(DiaryModel).filter(
+    #     DiaryModel.date == formatted_date,
+    #     DiaryModel.user_id == user_id,
+    #     DiaryModel.is_deleted == False
+    # ).first()
 
     # user_id로 사용자 nickname 조회
     user = db.query(User).filter(User.id == user_id).first()
@@ -255,16 +255,16 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
 
     # diary가 존재할 경우
-    if diary:
-        return {
-            "status": 200,
-            "message": "작성한 다이어리가 존재합니다.",
-            "is_exist": True,
-            "data": {
-                "date": formatted_date,
-                "diary_id": diary.id
-            },
-        }
+    # if diary:
+    #     return {
+    #         "status": 200,
+    #         "message": "작성한 다이어리가 존재합니다.",
+    #         "is_exist": True,
+    #         "data": {
+    #             "date": formatted_date,
+    #             "diary_id": diary.id
+    #         },
+    #     }
 
     # temp_diary에서 해당 날짜와 user_id로 조회
     temp_diary = db.query(TempDiary).filter(
@@ -590,6 +590,12 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
         }
     
     # 3. edit=true일 경우, 임시 다이어리 생성
+    db.query(TempDiary).filter(
+        TempDiary.date == diary.date,
+        TempDiary.user_id == user.id
+    ).update({"status": 1})
+    db.commit()
+
     temp_diary = TempDiary(
         diary_id=diary.id,
         user_id=user.id,
