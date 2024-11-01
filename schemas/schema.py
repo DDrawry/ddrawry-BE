@@ -15,7 +15,7 @@ class WeatherEnum(int, Enum):
     sunny = 1
     rainy = 2
     snowy = 3
-    stormy = 4
+    thunderstorm = 4
     cloudy = 5
     windy = 6
 
