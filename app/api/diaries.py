@@ -13,21 +13,23 @@ from sqlalchemy.orm import joinedload
 router = APIRouter(prefix="/diaries")
 
 
+from datetime import datetime
+from fastapi import HTTPException
 
-# /diaries
-@router.post("/")
+@router.post("")
 async def new_diary(
     diary: DiaryCreate, 
     db: Session = Depends(get_db), 
     user_id: int = Depends(get_current_user_id)
 ):
+    
     new_diary = DiaryModel(
         user_id=user_id,
         title=diary.title,
         story=diary.story if diary.story else "",
         weather=diary.weather,
         mood=diary.mood,
-        date=diary.date,
+        date=diary.date,  # 변환된 날짜 사용
         nickname=diary.nickname,
         created_at=datetime.now(),
         updated_at=datetime.now(),
@@ -36,6 +38,15 @@ async def new_diary(
     db.add(new_diary)
     db.commit()
     db.refresh(new_diary)
+
+    # 새로 생성된 다이어리와 같은 날짜의 temp_diary 상태를 1로 업데이트
+    db.query(TempDiary).filter(
+        TempDiary.user_id == user_id,
+        TempDiary.date == diary.date,  # 변환된 날짜와 일치하는 조건 추가
+        TempDiary.status != 1  # 상태가 1이 아닌 경우
+    ).update({"status": 1})
+    
+    db.commit()
 
     return {"status": 201, "message": "다이어리 저장 성공", "data": {"id": new_diary.id}}
 
@@ -511,9 +522,13 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             DiaryModel.like == True,
             DiaryModel.is_deleted == False  # 삭제되지 않은 다이어리만 포함
         ).order_by(DiaryModel.date).all()
-
-        if not liked_diaries:
-            raise HTTPException(status_code=404, detail="좋아요를 누른 다이어리가 없습니다.")
+    
+        if not liked_diaries:            
+            return {
+                "status": 200,
+                "message": "좋아요를 누른 다이어리가 없습니다.",
+                "data": []
+            }
         
         result = []
         for diary in liked_diaries:
@@ -547,7 +562,7 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
 @router.get("/{id}")
 async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     # 1. 다이어리를 조회
-    diary = db.query(DiaryModel).filter(DiaryModel.id == id).first()
+    diary = db.query(DiaryModel).filter(DiaryModel.id == id, DiaryModel.is_deleted == False).first()
     user = db.query(User).filter(User.id == user_id).first()
 
     if not diary:
