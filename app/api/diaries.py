@@ -75,13 +75,19 @@ async def edit_diary(
     existing_diary.nickname = diary.nickname
     existing_diary.updated_at = datetime.now(timezone.utc)  
 
+    db.query(TempDiary).filter(
+        TempDiary.user_id == user_id,
+        TempDiary.date == diary.date,  # 변환된 날짜와 일치하는 조건 추가
+        TempDiary.status != 1  # 상태가 1이 아닌 경우
+    ).update({"status": 1})
     db.commit()
     db.refresh(existing_diary)
 
     return {
+        "status": 200,
         "message": "다이어리 수정 성공",
-        "id": existing_diary.id,
         "diary": {
+            "id": existing_diary.id,
             "title": existing_diary.title,
             "story": existing_diary.story,
             "mood": MoodEnum(existing_diary.mood).name, 
