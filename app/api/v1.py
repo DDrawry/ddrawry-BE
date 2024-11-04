@@ -3,7 +3,7 @@ from fastapi import APIRouter
 from .users import router as users_router
 from .diaries import router as diaries_router
 from .auth import router as auth_router
-# from .images import router as image_router
+from .images import router as image_router
 from .auth import is_valid_token
 from fastapi import APIRouter, HTTPException, Request
 
@@ -19,7 +19,7 @@ V1.include_router(diaries_router)
 V1.include_router(auth_router)
 
 # # /api/v1/images
-# V1.include_router(image_router)
+V1.include_router(image_router)
 
 
 @V1.get("/", tags=["v1"])

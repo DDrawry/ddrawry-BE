@@ -6,7 +6,7 @@ import os
 import jwt
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from app.models import User, Token  # User와 Token 모델 import
+from app.models import User, Token, Setting  # User와 Token 모델 import
 from app.database import get_db  # DB 세션을 가져오는 함수를 import합니다.
 from app.utils import get_current_user_id
 
@@ -65,16 +65,31 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
         # DB에 사용자 정보 저장
         user = db.query(User).filter(User.kakao_id == kakao_id).first()
         if user:
-            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
-            db.add(new_token)
+            # 기존 사용자인 경우, 해당 사용자의 Setting 확인
+            setting = db.query(Setting).filter(Setting.user_id == user.id).first()
+            if not setting:
+                # 설정이 없을 때 기본 설정 추가
+                setting = Setting(user_id=user.id, dark_mode=False, notification=True, created_at=datetime.now())
+                db.add(setting)
+
+            existing_tokens = db.query(Token).filter(
+                Token.user_id == user.id, 
+                Token.expires_at.is_(None)
+            ).all()
+            
+            for token in existing_tokens:
+                token.expires_at = datetime.now()  # 만료 시간 기록
         else:
             user = User(kakao_id=kakao_id, nickname=nickname, created_at=datetime.now())
             db.add(user)
             db.commit()
             db.refresh(user)
 
-            new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
-            db.add(new_token)
+            setting = Setting(user_id=user.id, dark_mode=False, notification=True, created_at=datetime.now())
+            db.add(setting)
+
+        new_token = Token(user_id=user.id, token=kakao_access_token, created_at=datetime.now(), expires_at=None)
+        db.add(new_token)
 
         db.commit()
 
@@ -101,7 +116,7 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
             samesite="none",
             secure=True
         )
-
+        print(refresh_token)
         return {
             "status": 200,
             "message": "토큰 발급 성공",
@@ -111,23 +126,18 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
         }
 
 @router.get("/kakao/logout")
-async def kakao_logout(response: Response, access_token: str = Cookie(None), db: Session = Depends(get_db)):
-    if not access_token:
-        raise HTTPException(status_code=401, detail="JWT 토큰이 없습니다.")
-
-    # JWT 토큰 검증
-    try:
-        payload = jwt.decode(access_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id = payload.get("user_id")
-        user = db.query(User).filter(User.id == user_id).first()  # 변경된 부분
-    except (jwt.ExpiredSignatureError, jwt.JWTError):
-        raise HTTPException(status_code=401, detail="Invalid JWT token")
-
+async def kakao_logout(
+    response: Response, 
+    user_id: int = Depends(get_current_user_id),  # get_current_user_id를 통해 user_id 가져오기
+    db: Session = Depends(get_db)
+):
+    # User 검증
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     # Token 테이블에서 Kakao 액세스 토큰 가져오기 (가장 최근의 유효한 토큰)
-    token_entry = db.query(Token).filter(Token.user_id == user.id, Token.expires_at.is_(None)).order_by(Token.created_at.desc()).first()  # 변경된 부분
+    token_entry = db.query(Token).filter(Token.user_id == user.id, Token.expires_at.is_(None)).order_by(Token.created_at.desc()).first()
     if not token_entry:
         raise HTTPException(status_code=404, detail="Token not found")
     
@@ -142,14 +152,12 @@ async def kakao_logout(response: Response, access_token: str = Cookie(None), db:
             raise HTTPException(status_code=logout_response.status_code, detail="Kakao 로그아웃에 실패했습니다.")
 
         # JWT 토큰 쿠키 삭제
-        response.delete_cookie(key="access_token")
         response.delete_cookie(key="refresh_token")
 
         # Token 테이블에서 해당 사용자의 액세스 토큰 만료 시간 기록
-        token_entry.expires_at = datetime.now()  # 로그아웃 시간을 expires_at에 설정
         db.commit()
 
-        return {"message": "Kakao에서 성공적으로 로그아웃되었습니다."}    
+        return {"message": "Kakao에서 성공적으로 로그아웃되었습니다."} 
     
 
 from jwt import PyJWTError  # PyJWTError를 import
