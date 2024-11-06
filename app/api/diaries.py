@@ -86,15 +86,8 @@ async def edit_diary(
     return {
         "status": 200,
         "message": "다이어리 수정 성공",
-        "diary": {
+        "data": {
             "id": existing_diary.id,
-            "title": existing_diary.title,
-            "story": existing_diary.story,
-            "mood": MoodEnum(existing_diary.mood).name, 
-            "weather": WeatherEnum(existing_diary.weather).name,  
-            "date": existing_diary.date,
-            "nickname": existing_diary.nickname,
-            "updated_at": existing_diary.updated_at
         }
     }
 
