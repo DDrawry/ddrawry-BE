@@ -1,10 +1,9 @@
 from typing import List, Optional
-from fastapi.responses import JSONResponse
 from schemas.schema import MoodEnum, WeatherEnum, Diary, TempDiarySchema, Settings, DiaryCreate, StatusUpdateRequest
 from fastapi import APIRouter, Request, Query, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.models import Diary as DiaryModel, Image, User, TempDiary
-from ..utils import get_current_user_id, replace_null_with_empty_str
+from ..utils import get_current_user_id
 from ..database import get_db
 from datetime import datetime, timezone
 from sqlalchemy import func
@@ -22,7 +21,6 @@ async def new_diary(
     db: Session = Depends(get_db), 
     user_id: int = Depends(get_current_user_id)
 ):
-    
     new_diary = DiaryModel(
         user_id=user_id,
         title=diary.title,
@@ -30,7 +28,7 @@ async def new_diary(
         weather=diary.weather,
         mood=diary.mood,
         date=diary.date,  # 변환된 날짜 사용
-        nickname=user_id.nickname,
+        nickname=diary.nickname,
         created_at=datetime.now(),
         updated_at=datetime.now(),
     )
@@ -489,10 +487,10 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db), user_
 # 좋아요를 누른 다이어리들 조회 API
 @router.get("/like")
 async def get_like_diaries(type: str, date: str = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)): 
+    user_id = user_id
     if type == "month" and date and len(date) == 6:
         year = int(date[:4])
         month = int(date[4:])
-
         # 해당 연도와 월에 해당하는 좋아요 누른 다이어리를 조회 (삭제되지 않은 다이어리만 포함)
         liked_diaries = db.query(DiaryModel).filter(
             DiaryModel.like == True,
@@ -538,7 +536,8 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
         # 모든 좋아요를 누른 다이어리를 날짜순으로 조회 (삭제되지 않은 다이어리만 포함)
         liked_diaries = db.query(DiaryModel).filter(
             DiaryModel.like == True,
-            DiaryModel.is_deleted == False  # 삭제되지 않은 다이어리만 포함
+            DiaryModel.is_deleted == False,  # 삭제되지 않은 다이어리만 포함
+            DiaryModel.user_id == user_id,  # user_id가 일치하는지 확인
         ).order_by(DiaryModel.date).all()
     
         if not liked_diaries:            

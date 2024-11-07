@@ -19,6 +19,9 @@ pydantic = "^2.9.2"
 pycryptodome = "^3.21.0"
 cryptography = "^43.0.1"
 openai = "^1.51.2"
+boto3 = "^1.35.55"
+requests = "^2.32.3"
+pillow = "^11.0.0"
 
 
 [build-system]

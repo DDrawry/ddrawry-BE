@@ -63,12 +63,14 @@ class TempDiary(Base):
     like = Column(Boolean, nullable=False, default=False)
     status = Column(Boolean, nullable=False, default=False)
     images = relationship("Image", backref="temp_diary", lazy="joined")
+
+
 class Image(Base):
     __tablename__ = 'image'
     
     id = Column(Integer, primary_key=True)
-    diary_id = Column(Integer, ForeignKey('diary.id'), nullable=False)
-    temp_diary_id = Column(Integer, ForeignKey('temp_diary.id'), nullable=True)
+    diary_id = Column(Integer, ForeignKey('diary.id'), nullable=True)
+    temp_diary_id = Column(Integer, ForeignKey('temp_diary.id'), nullable=False)
     image_url = Column(String(255), nullable=True)
     created_at = Column(TIMESTAMP, nullable=True)
     is_temp = Column(Boolean, nullable=True, default=False)
