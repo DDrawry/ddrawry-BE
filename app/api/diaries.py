@@ -30,7 +30,7 @@ async def new_diary(
         weather=diary.weather,
         mood=diary.mood,
         date=diary.date,  # 변환된 날짜 사용
-        nickname=diary.nickname,
+        nickname=user_id.nickname,
         created_at=datetime.now(),
         updated_at=datetime.now(),
     )
@@ -47,8 +47,20 @@ async def new_diary(
     ).update({"status": 1})
     
     db.commit()
+    
+    last_temp_diary_id = db.query(TempDiary.id).filter(
+        TempDiary.user_id == user_id,
+        TempDiary.date == diary.date
+    ).order_by(TempDiary.id.desc()).first()
 
-    return {"status": 201, "message": "다이어리 저장 성공", "data": {"id": new_diary.id}}
+    return {
+        "status": 201,
+        "message": "다이어리 저장 성공",
+        "data": {
+            "id": new_diary.id,
+            "temp_id": last_temp_diary_id[0] if last_temp_diary_id else None  # Last TempDiary id
+        }
+    }
 
 # /diaries/{diary_id}
 @router.put("/{diary_id}")
@@ -83,11 +95,18 @@ async def edit_diary(
     db.commit()
     db.refresh(existing_diary)
 
+
+    last_temp_diary_id = db.query(TempDiary.id).filter(
+        TempDiary.user_id == user_id,
+        TempDiary.date == diary.date
+    ).order_by(TempDiary.id.desc()).first()
+
     return {
         "status": 200,
         "message": "다이어리 수정 성공",
         "data": {
             "id": existing_diary.id,
+            "temp_id": last_temp_diary_id[0] if last_temp_diary_id else None  # Last TempDiary id
         }
     }
 
