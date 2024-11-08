@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 import os
 from openai import OpenAI
-from ..utils import get_current_user_id, generate_and_upload_image_to_s3
+from ..utils import get_current_user_id, generate_and_upload_image_to_s3, get_daily_image_count
 from ..database import get_db
 from app.models import TempDiary, Image
 from datetime import datetime
@@ -34,6 +34,9 @@ def get_tempdiary_by_id(db: Session, temp_id: int):
 @router.post("")
 async def generate_and_upload_image(request: ImageRequest, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     story_cleaned = request.story.strip()
+    remaining_count = get_daily_image_count(db, user_id)
+    if remaining_count == 0:
+        raise HTTPException(status_code=400, detail="Daily image creation limit reached. Please try again tomorrow.")
 
     # temp_id로 tempdiary에서 date 값을 조회
     tempdiary = get_tempdiary_by_id(db, request.temp_id)
