@@ -32,13 +32,17 @@ def get_tempdiary_by_id(db: Session, temp_id: int):
 
 
 @router.post("")
-async def generate_and_upload_image(request: ImageRequest, db: Session = Depends(get_db), ): #user_id: int = Depends(get_current_user_id)):
+async def generate_and_upload_image(request: ImageRequest, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     story_cleaned = request.story.strip()
 
     # temp_id로 tempdiary에서 date 값을 조회
     tempdiary = get_tempdiary_by_id(db, request.temp_id)
     if not tempdiary:
         raise HTTPException(status_code=404, detail="TempDiary not found")
+    
+    # temp_diary의 status가 1인 경우 오류 발생
+    if tempdiary.status == 1:
+        raise HTTPException(status_code=400, detail="임시다이어리가 존재하지 않습니다.")
     
     # date를 "YYYY-MM-DD" 형식으로 변환
     date = tempdiary.date.strftime("%Y-%m-%d")
@@ -61,7 +65,7 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
 
         # 이미지 URL을 받아서 S3에 업로드
         image_url = image_response.data[0].url
-        s3_image_response = await generate_and_upload_image_to_s3(image_url, user_id=1, date=date)
+        s3_image_response = await generate_and_upload_image_to_s3(image_url, user_id=user_id, date=date)
 
         # S3 URL에서 경로만 추출 (예: /1/2024-11-17/1.jpg)
         relative_image_url = s3_image_response["data"]["image_url"].replace("s3://your-s3-bucket/", "")

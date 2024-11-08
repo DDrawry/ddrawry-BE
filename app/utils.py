@@ -1,7 +1,17 @@
 import jwt
-from fastapi import HTTPException, Header
+from fastapi import HTTPException, Header, Request
 from dotenv import load_dotenv
 
+from datetime import date, timedelta
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from app.models import TempDiary, Image as ImageModel
+
+from PIL import Image
+
+import io
+import requests
+import boto3
 import os 
 
 load_dotenv()
@@ -34,8 +44,6 @@ def replace_null_with_empty_str(data: dict) -> dict:
     return {key: (value if value is not None else "") for key, value in data.items()}
 
 
-from fastapi import Request
-
 def get_dev_from_request(request: Request):
     dev = request.query_params.get("dev")
     if dev is not None and dev in ["0", "1"]:
@@ -43,10 +51,6 @@ def get_dev_from_request(request: Request):
     return 1  # 기본값은 1
 
 
-import io
-import requests
-from PIL import Image
-import boto3
 
 
 AWS_ACCESS_KEY_ID=os.getenv("AWS_ACCESS_KEY_ID")
@@ -79,7 +83,6 @@ async def generate_and_upload_image_to_s3(image_url: str, user_id: int, date: st
         # 파일명 생성 (user_id, date, 카운트 번호 등 포함)
         # 디렉토리가 없다면 생성
         directory_path = os.path.join(str(user_id), date)
-        os.makedirs(directory_path, exist_ok=True)  # 디렉토리 생성, 이미 있으면 무시
 
         # S3에서 해당 디렉토리 내 파일 목록을 가져와서 count 계산
         response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=directory_path)
@@ -105,3 +108,39 @@ async def generate_and_upload_image_to_s3(image_url: str, user_id: int, date: st
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error during image processing or upload: {str(e)}")
+    
+
+
+# 하루 최대 이미지 생성 횟수
+MAX_DAILY_IMAGE_COUNT = 3
+
+def get_daily_image_count(db: Session, user_id: int) -> int:
+    today = date.today()
+    
+    # TempDiary와 조인하여 user_id가 일치하는 이미지를 대상으로 하루 동안 생성된 개수를 구합니다.
+    used_count = db.query(func.count(ImageModel.id)).join(
+        TempDiary, ImageModel.temp_diary_id == TempDiary.id
+    ).filter(
+        TempDiary.user_id == user_id,
+        ImageModel.created_at >= today,
+        ImageModel.created_at < today + timedelta(days=1),
+        ImageModel.is_deleted == False,
+        ImageModel.is_active == True
+    ).scalar()
+
+    # 남은 가능 횟수를 계산
+    remaining_count = MAX_DAILY_IMAGE_COUNT - used_count
+    # 남은 횟수가 음수가 되지 않도록 조정
+    return max(0, remaining_count)
+
+
+def get_image_count_for_date(db: Session, user_id: int, target_date: date) -> int:
+    # TempDiary와 관련된 Image를 날짜별로 카운트하는 쿼리 작성
+    count = db.query(func.count(ImageModel.id))\
+              .join(TempDiary, TempDiary.id == ImageModel.temp_diary_id)\
+              .filter(TempDiary.user_id == user_id)\
+              .filter(TempDiary.date == target_date)\
+              .filter(ImageModel.is_deleted == False)\
+              .scalar()  # 실제 값 반환
+    
+    return count or 0  # 없으면 0을 반환

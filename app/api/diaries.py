@@ -1,9 +1,9 @@
 from typing import List, Optional
-from schemas.schema import MoodEnum, WeatherEnum, Diary, TempDiarySchema, Settings, DiaryCreate, StatusUpdateRequest
-from fastapi import APIRouter, Request, Query, HTTPException, Depends
+from schemas.schema import MoodEnum, WeatherEnum, DiaryCreate, StatusUpdateRequest
+from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.models import Diary as DiaryModel, Image, User, TempDiary
-from ..utils import get_current_user_id
+from ..utils import get_current_user_id, get_daily_image_count, get_image_count_for_date
 from ..database import get_db
 from datetime import datetime, timezone
 from sqlalchemy import func
@@ -178,6 +178,7 @@ async def get_temp_diary(
         response_data["temp_id"] = temp_diary.id
     if temp_diary.date is not None:  # temp_diary에 date가 존재하는지 확인
         response_data["date"] = temp_diary.date  # date 컬럼 값을 추가
+        target_date = temp_diary.date  # target_date는 temp_diary의 date로 설정
     if user.nickname is not None:
         response_data["nickname"] = user.nickname
     if temp_diary.title is not None:
@@ -188,6 +189,12 @@ async def get_temp_diary(
         response_data["weather"] = WeatherEnum(temp_diary.weather).name.lower()
     if temp_diary.story is not None:
         response_data["story"] = temp_diary.story
+
+
+    daily_image_count = get_daily_image_count(db, user_id)
+    image_count = get_image_count_for_date(db, user_id, target_date)
+    response_data["remaining_count"] = daily_image_count
+    response_data["image_count"] = image_count
 
     return {
         "status": 200,
