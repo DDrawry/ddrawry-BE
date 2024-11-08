@@ -434,14 +434,15 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db), user_
     month = date[4:]
 
     # MySQL에서 연도와 월을 추출하기 위한 DATE_FORMAT 사용
-    diaries = db.query(DiaryModel).options(joinedload(DiaryModel.images)).filter(
+    diaries_query = db.query(DiaryModel).options(joinedload(DiaryModel.images)).filter(
         func.DATE_FORMAT(DiaryModel.date, "%Y") == year,
         func.DATE_FORMAT(DiaryModel.date, "%m") == month,
         DiaryModel.is_deleted == False,  # 삭제된 다이어리를 제외
         DiaryModel.user_id == user_id     # 현재 사용자의 다이어리만 조회
-    ).all()
+    )
 
     # 다이어리가 없음
+    diaries = diaries_query.all()
     if not diaries:
         return {
             "status": 200,
@@ -449,8 +450,10 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db), user_
             "data": []
         }
 
-    # 캘린더형 조회 (title 없이)
+    # 캘린더형 조회 (date를 기준으로 오름차순 정렬)
     if type == "calendar":  # 오타 수정: 'calender' → 'calendar'
+        diaries_query = diaries_query.order_by(DiaryModel.date.asc())  # 오름차순으로 정렬
+        diaries = diaries_query.all()
         result = [
             {
                 "id": diary.id,
@@ -461,8 +464,10 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db), user_
             for diary in diaries
         ]
 
-    # 목록형 조회 (title 포함)
+    # 목록형 조회 (title 포함, date를 기준으로 내림차순 정렬)
     elif type == "list":
+        diaries_query = diaries_query.order_by(DiaryModel.date.desc())  # 내림차순으로 정렬
+        diaries = diaries_query.all()
         result = [
             {
                 "id": diary.id,
@@ -498,14 +503,19 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
     if type == "month" and date and len(date) == 6:
         year = int(date[:4])
         month = int(date[4:])
-        # 해당 연도와 월에 해당하는 좋아요 누른 다이어리를 조회 (삭제되지 않은 다이어리만 포함)
+        
+        # Calculate the correct last day of the month
+        from calendar import monthrange
+        last_day = monthrange(year, month)[1]
+        
+        # Query liked diaries for the specified month and year, ordered by date in descending order
         liked_diaries = db.query(DiaryModel).filter(
             DiaryModel.like == True,
-            DiaryModel.user_id == user_id,  # user_id가 일치하는지 확인
-            DiaryModel.is_deleted == False,  # 삭제되지 않은 다이어리만 포함
-            DiaryModel.date.between(f"{year}-{month:02d}-01", f"{year}-{month:02d}-30")  # 30일까지 확인
-        ).all()
-    
+            DiaryModel.user_id == user_id,  # user_id matches
+            DiaryModel.is_deleted == False,  # only non-deleted diaries
+            DiaryModel.date.between(f"{year}-{month:02d}-01", f"{year}-{month:02d}-{last_day:02d}")  # correct date range
+        ).order_by(DiaryModel.date.desc()).all()  # order by date descending
+        
         if not liked_diaries:            
             return {
                 "status": 200,
@@ -513,25 +523,24 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
                 "data": []
             }
 
-        # 다이어리 정보를 반환할 형식으로 변환
+        # Prepare the response in the desired format
         result = []
         for diary in liked_diaries:
-            # 이미지 URL 가져오기 (하나만 가져오기)
+            # Fetch image URL (get only the first one)
             image = db.query(Image).filter(
                 Image.diary_id == diary.id,
                 Image.is_active == True,
                 Image.is_deleted == False
-            ).first()  # 첫 번째 결과만 가져오기
+            ).first()  # get the first image
 
-            # 이미지 URL이 없으면 None으로 설정
             image_url = image.image_url if image else None
 
             result.append({
                 "id": diary.id,
-                "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 형식 변환
+                "date": diary.date.strftime("%Y-%m-%d"),
                 "title": diary.title,
-                "image": image_url,  # 단일 이미지 URL 또는 None
-                "bookmark": 1 if diary.like else 0  # 좋아요 상태를 int(1 또는 0)로 반환
+                "image": image_url,  # single image URL or None
+                "bookmark": 1 if diary.like else 0  # bookmark as 1 or 0
             })
         
         return {
@@ -539,13 +548,14 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             "message": f"{year}년 {month}월 좋아요 누른 일기 조회 완료",
             "data": result,
         }
+
     elif type == "all":
-        # 모든 좋아요를 누른 다이어리를 날짜순으로 조회 (삭제되지 않은 다이어리만 포함)
+        # Query all liked diaries, ordered by date in descending order
         liked_diaries = db.query(DiaryModel).filter(
             DiaryModel.like == True,
-            DiaryModel.is_deleted == False,  # 삭제되지 않은 다이어리만 포함
-            DiaryModel.user_id == user_id,  # user_id가 일치하는지 확인
-        ).order_by(DiaryModel.date).all()
+            DiaryModel.is_deleted == False,  # only non-deleted diaries
+            DiaryModel.user_id == user_id,  # user_id matches
+        ).order_by(DiaryModel.date.desc()).all()  # order by date descending
     
         if not liked_diaries:            
             return {
@@ -554,24 +564,24 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
                 "data": []
             }
         
+        # Prepare the response
         result = []
         for diary in liked_diaries:
-            # 이미지 URL 가져오기 (하나만 가져오기)
+            # Fetch image URL (get only the first one)
             image = db.query(Image).filter(
                 Image.diary_id == diary.id,
                 Image.is_active == True,
                 Image.is_deleted == False
-            ).first()  # 첫 번째 결과만 가져오기
+            ).first()  # get the first image
 
-            # 이미지 URL이 없으면 None으로 설정
             image_url = image.image_url if image else None
 
             result.append({
                 "id": diary.id,
-                "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 형식 변환
+                "date": diary.date.strftime("%Y-%m-%d"),
                 "title": diary.title,
-                "image": image_url,  # 단일 이미지 URL 또는 None
-                "bookmark": True if diary.like else False  # 좋아요 상태를 int(1 또는 0)로 반환
+                "image": image_url,  # single image URL or None
+                "bookmark": True if diary.like else False  # bookmark as True or False
             })
         
         return {
@@ -579,7 +589,6 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             "message": "모든 좋아요를 누른 일기 조회 완료",
             "data": result,
         }
-
 
 
 

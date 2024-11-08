@@ -91,6 +91,91 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error during image generation or upload: {str(e)}")
 
+@router.get("/{temp_id}")
+async def get_images_by_temp_id(temp_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    # temp_diary 정보를 찾기
+    temp_diary = db.query(TempDiary).filter(TempDiary.id == temp_id).first()
+    if not temp_diary:
+        raise HTTPException(status_code=404, detail="TempDiary not found")
 
-class CopyRequest(BaseModel):
-    date: str  # YYYY-MM-DD 형식으로 날짜 입력
+    # temp_diary에서 user_id와 date를 가져옴
+    user_id = user_id
+    date = temp_diary.date.strftime("%Y-%m-%d")  # date를 "YYYY-MM-DD" 형식으로 변환
+
+    # 해당 user_id와 date에 해당하는 이미지 URL들을 찾음
+    images = db.query(Image).filter(
+        Image.temp_diary_id == temp_id,
+        Image.image_url.like(f"{user_id}/{date}%"),  # image_url이 {user_id}/{date}로 시작하는 이미지만 찾기
+        Image.is_active == True,  # 활성화된 이미지만 찾기
+        Image.is_deleted == False  # 삭제되지 않은 이미지만 찾기
+    ).all()
+
+    if not images:
+        raise HTTPException(status_code=404, detail="No images found for this temp_diary")
+
+    # 기본 데이터 구조
+    response_data = []
+    main_image_info = None  # main_image 정보를 저장할 변수
+
+    for index, image in enumerate(images):
+        image_url = S3_BASE_URL + image.image_url  # 이미지 URL을 합침
+
+        if image.is_temp:
+            main_image_info = {"id": image.id, "main_image": image_url}  # main_image로 설정
+        else:
+            response_data.append({"id": image.id, f"temp_image_{index+1}": image_url})  # temp_image_X 형식으로 설정
+
+    # main_image가 존재하면 response_data의 앞에 추가
+    if main_image_info:
+        response_data.insert(0, main_image_info)  # main_image 정보를 리스트의 첫 번째에 추가
+
+    return {
+        "status": 200,
+        "message": "그림 목록 조회 성공",
+        "data": response_data
+    }
+
+
+@router.patch("/{image_id}")
+async def update_main_image(image_id: int, db: Session = Depends(get_db)):
+    # 해당 image_id에 해당하는 이미지를 찾음
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # 해당 image가 속한 temp_diary_id 찾기
+    temp_diary_id = image.temp_diary_id
+
+    # 해당 temp_diary_id에 속한 이미지들 조회
+    images = db.query(Image).filter(
+        Image.temp_diary_id == temp_diary_id,
+        Image.is_active == True,
+        Image.is_deleted == False
+    ).all()
+
+    if not images:
+        raise HTTPException(status_code=404, detail="No images found for this temp_diary")
+
+    # 이미지 목록에서, 선택된 image_id가 있는지 확인
+    selected_image = next((image for image in images if image.id == image_id), None)
+    if not selected_image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # is_temp 값을 업데이트
+    for img in images:
+        if img.is_temp:  # 기존의 main_image로 설정된 이미지를 찾음
+            img.is_temp = False  # 기존 main_image의 is_temp를 False로 설정
+        if img.id == image_id:  # 새로운 main_image로 설정할 이미지
+            img.is_temp = True  # 선택된 이미지를 main_image로 설정
+
+    # 변경 사항 커밋
+    db.commit()
+
+    # 업데이트된 이미지 리스트 반환
+    return {
+        "status": 200,
+        "message": "대표 이미지 업데이트 성공",
+        "data": {
+            "main_image": S3_BASE_URL + selected_image.image_url  # 새로 설정된 main_image URL
+        }
+    }
