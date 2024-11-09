@@ -427,18 +427,31 @@ async def search_diary(keyword: str, db: Session = Depends(get_db), user_id: int
         "data": results,
     }
 
-# /diaries/main?type=calender&date=202406
+
+def get_datetime_by_date(date):
+    return datetime.strptime(date, "%Y%m%d")
+
+# /diaries/main?type=calendar&start=20240629&end=20240801
 @router.get("/main")
-async def get_diaries(type: str, date: str, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    year = date[:4]
-    month = date[4:]
+async def get_diaries(
+    type: str,
+    start: str,
+    end: str,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
+    if not start or not end:
+        return {"error": {"start": start, "end": end}}
 
     # MySQL에서 연도와 월을 추출하기 위한 DATE_FORMAT 사용
-    diaries_query = db.query(DiaryModel).options(joinedload(DiaryModel.images)).filter(
-        func.DATE_FORMAT(DiaryModel.date, "%Y") == year,
-        func.DATE_FORMAT(DiaryModel.date, "%m") == month,
-        DiaryModel.is_deleted == False,  # 삭제된 다이어리를 제외
-        DiaryModel.user_id == user_id     # 현재 사용자의 다이어리만 조회
+    diaries_query = (
+        db.query(DiaryModel)
+        .options(joinedload(DiaryModel.images))
+        .filter(
+            DiaryModel.date.between(get_datetime_by_date(start), get_datetime_by_date(end)), # start와 end 사이의 날짜 필터
+            DiaryModel.is_deleted == False,  # 삭제된 다이어리를 제외
+            DiaryModel.user_id == user_id,  # 현재 사용자의 다이어리만 조회
+        )
     )
 
     # 다이어리가 없음
@@ -446,27 +459,31 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db), user_
     if not diaries:
         return {
             "status": 200,
-            "message": f"{year}-{month}에 해당하는 다이어리가 없습니다.",
-            "data": []
+            "message": f"{start}-{end}에 해당하는 다이어리가 없습니다.",
+            "data": [],
         }
 
     # 캘린더형 조회 (date를 기준으로 오름차순 정렬)
     if type == "calendar":  # 오타 수정: 'calender' → 'calendar'
-        diaries_query = diaries_query.order_by(DiaryModel.date.asc())  # 오름차순으로 정렬
+        diaries_query = diaries_query.order_by(
+            DiaryModel.date.asc()
+        )  # 오름차순으로 정렬
         diaries = diaries_query.all()
         result = [
             {
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
                 "image": diary.images[0].image_url if diary.images else "띠로리로고",
-                "bookmark": diary.like
+                "bookmark": diary.like,
             }
             for diary in diaries
         ]
 
     # 목록형 조회 (title 포함, date를 기준으로 내림차순 정렬)
     elif type == "list":
-        diaries_query = diaries_query.order_by(DiaryModel.date.desc())  # 내림차순으로 정렬
+        diaries_query = diaries_query.order_by(
+            DiaryModel.date.desc()
+        )  # 내림차순으로 정렬
         diaries = diaries_query.all()
         result = [
             {
@@ -474,7 +491,7 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db), user_
                 "date": diary.date.strftime("%Y-%m-%d"),
                 "title": diary.title,
                 "image": diary.images[0].image_url if diary.images else "띠로리로고",
-                "bookmark": diary.like
+                "bookmark": diary.like,
             }
             for diary in diaries
         ]
@@ -482,13 +499,13 @@ async def get_diaries(type: str, date: str, db: Session = Depends(get_db), user_
     else:
         return {
             "status": 400,
-            "message": "잘못된 type 값입니다. 'list' 또는 'calendar'를 사용하세요."
+            "message": "잘못된 type 값입니다. 'list' 또는 'calendar'를 사용하세요.",
         }
 
     return {
         "status": 200,
-        "message": f"{year}-{month}에 대한 메인 페이지 조회 완료",
-        "data": result
+        "message": f"{start}-{end}에 대한 메인 페이지 조회 완료",
+        "data": result,
     }
 
 
