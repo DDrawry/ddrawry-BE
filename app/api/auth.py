@@ -18,7 +18,7 @@ KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
 KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
 JWT_SECRET = os.getenv("JWT_SECRET")  # JWT 비밀키
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_MINUTES = 30  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
+JWT_EXPIRATION_MINUTES = 1  # JWT 토큰 유효 시간 1분으로 설정 (테스트용)
 JWT_REFRESH_EXPIRATION_MINUTES = 1  # JWT 리프레시 토큰 유효 시간 60분
 LOCAL_REDIRECT_URI = os.getenv("LOCAL_REDIRECT_URI")
 PROD_REDIRECT_URI = os.getenv("PROD_REDIRECT_URI")
@@ -127,8 +127,9 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
 
 @router.get("/kakao/logout")
 async def kakao_logout(
+    request: Request, 
     response: Response, 
-    user_id: int = Depends(get_current_user_id),  # get_current_user_id를 통해 user_id 가져오기
+    user_id: int = Depends(get_current_user_id), 
     db: Session = Depends(get_db)
 ):
     # User 검증
@@ -136,20 +137,32 @@ async def kakao_logout(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Token 테이블에서 Kakao 액세스 토큰 가져오기 (가장 최근의 유효한 토큰)
-    token_entry = db.query(Token).filter(Token.user_id == user.id, Token.expires_at.is_(None)).order_by(Token.created_at.desc()).first()
-    if not token_entry:
-        raise HTTPException(status_code=404, detail="Token not found")
-    
-    # 카카오 로그아웃 요청
-    kakao_logout_url = "https://kapi.kakao.com/v1/user/unlink"
-    headers = {"Authorization": f"Bearer {token_entry.token}"}
+    # 리프레시 토큰 가져오기
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
 
-    async with httpx.AsyncClient() as client:
-        logout_response = await client.post(kakao_logout_url, headers=headers)
+    try:
+        # 리프레시 토큰 디코드
+        refresh_payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = refresh_payload.get("user_id")
 
-        if logout_response.status_code != 200:
-            raise HTTPException(status_code=logout_response.status_code, detail="Kakao 로그아웃에 실패했습니다.")
+        # 카카오 액세스 토큰 요청
+        token_entry = db.query(Token).filter(Token.user_id == user_id, Token.expires_at.is_(None)).order_by(Token.created_at.desc()).first()
+        if not token_entry:
+            raise HTTPException(status_code=404, detail="Access token not found")
+
+        kakao_access_token = token_entry.token
+
+        # 카카오 로그아웃 요청
+        kakao_logout_url = "https://kapi.kakao.com/v1/user/unlink"
+        headers = {"Authorization": f"Bearer {kakao_access_token}"}
+
+        async with httpx.AsyncClient() as client:
+            logout_response = await client.post(kakao_logout_url, headers=headers)
+
+            if logout_response.status_code != 200:
+                raise HTTPException(status_code=logout_response.status_code, detail=f"Kakao 로그아웃에 실패했습니다. 오류: {logout_response.text}")
 
         # JWT 토큰 쿠키 삭제
         response.delete_cookie(key="refresh_token")
@@ -158,6 +171,12 @@ async def kakao_logout(
         db.commit()
 
         return {"message": "Kakao에서 성공적으로 로그아웃되었습니다."} 
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token has expired")
+    except PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+
     
 
 from jwt import PyJWTError  # PyJWTError를 import
