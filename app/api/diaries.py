@@ -1,19 +1,27 @@
 from typing import List, Optional
-from schemas.schema import MoodEnum, WeatherEnum, DiaryCreate, StatusUpdateRequest
+from schemas.schema import MoodEnum, WeatherEnum, DiaryCreate, StatusUpdateRequest, ShareImageRequest
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.models import Diary as DiaryModel, Image, User, TempDiary
-from ..utils import get_current_user_id, get_daily_image_count, get_image_count_for_date
+from ..utils import get_current_user_id, get_daily_image_count, get_image_count_for_date, upload_image_to_s3
 from ..database import get_db
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
+from datetime import datetime
+from fastapi import HTTPException
+
+import os
 
 router = APIRouter(prefix="/diaries")
 
+load_dotenv()
 
-from datetime import datetime
-from fastapi import HTTPException
+S3_BASE_URL= os.getenv("S3_BASE_URL")
+
+
 
 @router.post("")
 async def new_diary(
@@ -716,4 +724,50 @@ async def like_diary(diary_id: int, db: Session = Depends(get_db), user_id: int 
                 "bookmark": diary.like
             }
         }
+    
+import base64
 
+
+
+@router.post("/share")
+async def share_diary_image(
+    request: ShareImageRequest,  # 요청 본문으로 받기
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    
+    if "," in request.image:
+        image_data = request.image.split(",")[1]
+    else:
+        image_data = request.image
+        
+    try:
+        image_data = base64.b64decode(image_data)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid image data")
+    
+    # S3에 이미지 업로드
+    s3_url = upload_image_to_s3(image_data, user_id)
+    
+    # 이미지 URL과 정보를 데이터베이스에 저장
+    new_image = Image(
+        diary_id=request.diary_id,
+        temp_diary_id=None,  # 필요 시 temp_diary_id를 설정
+        image_url=s3_url,
+        created_at=datetime.utcnow(),
+        is_temp=False,
+        is_active=True,
+        is_deleted=False
+    )
+    db.add(new_image)
+    db.commit()
+    db.refresh(new_image)  # 새로 추가된 이미지 정보를 새로고침하여 얻음
+
+    return {
+        "status": "success",
+        "message": "Image uploaded and saved successfully",
+        "data": {
+            "image_url": S3_BASE_URL + s3_url
+        }
+    }
+    

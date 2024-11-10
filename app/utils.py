@@ -144,3 +144,30 @@ def get_image_count_for_date(db: Session, user_id: int, target_date: date) -> in
               .scalar()  # 실제 값 반환
     
     return count or 0  # 없으면 0을 반환
+
+
+
+import uuid
+
+def upload_image_to_s3(image_data: bytes, user_id: int) -> str:
+    """
+    이미지 데이터를 S3 버킷에 업로드하는 함수
+
+    :param image_data: Base64 디코딩된 이미지 바이트 데이터
+    :param user_id: 사용자 ID
+    :return: 업로드된 이미지의 S3 URL
+    """
+    # 파일 이름 생성
+    filename = f"share/{user_id}/{uuid.uuid4()}.jpg"
+    
+    # S3에 이미지 업로드
+    s3_client.put_object(
+        Bucket=bucket_name,
+        Key=filename,
+        Body=image_data,
+        ContentType='image/jpeg'
+    )
+    
+    # 이미지 URL 생성 및 반환
+    s3_url = filename
+    return s3_url

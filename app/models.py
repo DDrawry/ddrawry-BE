@@ -70,7 +70,7 @@ class Image(Base):
     
     id = Column(Integer, primary_key=True)
     diary_id = Column(Integer, ForeignKey('diary.id'), nullable=True)
-    temp_diary_id = Column(Integer, ForeignKey('temp_diary.id'), nullable=False)
+    temp_diary_id = Column(Integer, ForeignKey('temp_diary.id'), nullable=True)
     image_url = Column(String(255), nullable=True)
     created_at = Column(TIMESTAMP, nullable=True)
     is_temp = Column(Boolean, nullable=True, default=False)

@@ -94,3 +94,8 @@ class StatusUpdateRequest(BaseModel):
 
 class KakaoCallbackCode(BaseModel):
     code: str
+
+
+class ShareImageRequest(BaseModel):
+    diary_id: int
+    image: str
