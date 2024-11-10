@@ -42,6 +42,7 @@ class DiaryCreate(BaseModel):
     mood: str  # 문자열로 받기
     weather: str  # 문자열로 받기
     title: str
+    image: Optional[str] = None
     story: Optional[str] = None
     like: Optional[bool] = False  
 

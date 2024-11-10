@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 import os
 from openai import OpenAI
-from ..utils import get_current_user_id, generate_and_upload_image_to_s3, get_daily_image_count
+from ..utils import get_current_user_id, generate_and_upload_image_to_s3, get_daily_image_count, get_image_count_for_date
 from ..database import get_db
 from app.models import TempDiary, Image
 from datetime import datetime
@@ -35,6 +35,7 @@ def get_tempdiary_by_id(db: Session, temp_id: int):
 async def generate_and_upload_image(request: ImageRequest, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     story_cleaned = request.story.strip()
     remaining_count = get_daily_image_count(db, user_id)
+
     if remaining_count == 0:
         raise HTTPException(status_code=400, detail="Daily image creation limit reached. Please try again tomorrow.")
 
@@ -87,7 +88,8 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
             "status": 200,
             "message": "Image generated and uploaded successfully, saved to database",
             "data": {
-                "image_url": S3_BASE_URL + relative_image_url
+                "image_url": S3_BASE_URL + relative_image_url,
+                "remain_count": remaining_count
             }
         }
     
@@ -144,47 +146,30 @@ async def get_images_by_temp_id(temp_id: int, db: Session = Depends(get_db), use
     }
 
 
-
-@router.patch("/{image_id}")
-async def update_main_image(image_id: int, db: Session = Depends(get_db)):
-    # 해당 image_id에 해당하는 이미지를 찾음
-    image = db.query(Image).filter(Image.id == image_id).first()
+@router.delete("/{image_id}")
+async def delete_image(image_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    # 삭제할 이미지 찾기
+    image = db.query(Image).filter(Image.id == image_id, Image.is_deleted == False).first()
     if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
+        raise HTTPException(status_code=404, detail="Image not found or already deleted")
 
-    # 해당 image가 속한 temp_diary_id 찾기
-    temp_diary_id = image.temp_diary_id
-
-    # 해당 temp_diary_id에 속한 이미지들 조회
-    images = db.query(Image).filter(
-        Image.temp_diary_id == temp_diary_id,
-        Image.is_active == True,
-        Image.is_deleted == False
-    ).all()
-
-    if not images:
-        raise HTTPException(status_code=404, detail="No images found for this temp_diary")
-
-    # 이미지 목록에서, 선택된 image_id가 있는지 확인
-    selected_image = next((image for image in images if image.id == image_id), None)
-    if not selected_image:
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    # is_temp 값을 업데이트
-    for img in images:
-        if img.is_temp:  # 기존의 main_image로 설정된 이미지를 찾음
-            img.is_temp = False  # 기존 main_image의 is_temp를 False로 설정
-        if img.id == image_id:  # 새로운 main_image로 설정할 이미지
-            img.is_temp = True  # 선택된 이미지를 main_image로 설정
-
-    # 변경 사항 커밋
+    # 이미지 삭제 표시
+    image.is_deleted = True
     db.commit()
 
-    # 업데이트된 이미지 리스트 반환
+    # 해당 이미지의 TempDiary와 날짜 조회
+    temp_diary = db.query(TempDiary).filter(TempDiary.id == image.temp_diary_id).first()
+    if not temp_diary:
+        raise HTTPException(status_code=404, detail="Associated TempDiary not found")
+
+    # 날짜별 남아있는 이미지 수 조회
+    image_count = get_image_count_for_date(db, user_id, temp_diary.date)
+
     return {
         "status": 200,
-        "message": "대표 이미지 업데이트 성공",
+        "message": "Image deleted successfully",
         "data": {
-            "main_image": S3_BASE_URL + selected_image.image_url  # 새로 설정된 main_image URL
+            "image_count": image_count
         }
     }
+
