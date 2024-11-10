@@ -223,6 +223,11 @@ async def get_temp_diary(
     if temp_diary.story is not None:
         response_data["story"] = temp_diary.story
 
+    daily_image_count = get_daily_image_count(db, user_id)
+    image_count = get_image_count_for_date(db, user_id, target_date)
+    response_data["remaining_count"] = daily_image_count
+    response_data["image_count"] = image_count
+
     return {
         "status": 200,
         "message": "임시 다이어리를 조회 완료.",

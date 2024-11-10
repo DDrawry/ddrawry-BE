@@ -84,12 +84,15 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
         db.add(new_image)
         db.commit()  # DB에 저장
 
+        # 이미지를 저장한 후 남은 가능 횟수를 다시 계산
+        remaining_count = get_daily_image_count(db, user_id)
+
         return {
             "status": 200,
             "message": "Image generated and uploaded successfully, saved to database",
             "data": {
                 "image_url": S3_BASE_URL + relative_image_url,
-                "remain_count": remaining_count
+                "remain_count": remaining_count  # 정확한 남은 횟수 반환
             }
         }
     
