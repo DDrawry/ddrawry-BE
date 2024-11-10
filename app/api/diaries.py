@@ -225,7 +225,7 @@ async def get_temp_diary(
 
     daily_image_count = get_daily_image_count(db, user_id)
     image_count = get_image_count_for_date(db, user_id, target_date)
-    response_data["remaining_count"] = daily_image_count
+    response_data["remain_count"] = daily_image_count
     response_data["image_count"] = image_count
 
     return {
@@ -374,6 +374,18 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
     db.add(new_temp_diary)
     db.commit()
     db.refresh(new_temp_diary)
+
+    temp_diaries = db.query(TempDiary).filter(
+        TempDiary.date == formatted_date,
+        TempDiary.user_id == user_id
+    ).all()
+
+    # 각 TempDiary에 연결된 모든 이미지에 대해 temp_diary_id 업데이트
+    for temp_diary in temp_diaries:
+        images = db.query(Image).filter(Image.temp_diary_id == temp_diary.id).all()
+        for image in images:
+            image.temp_diary_id = new_temp_diary.id
+            db.commit()
 
     return {
         "status": 200,
@@ -662,8 +674,7 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             "message": "모든 좋아요를 누른 일기 조회 완료",
             "data": result,
         }
-
-
+    
 @router.get("/{id}")
 async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     # 1. 다이어리를 조회
@@ -684,9 +695,10 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
     else:
         # edit=True일 때는 기존 temp_diary와 연결된 모든 이미지들을 가져옵니다.
         temp_diary_images = db.query(Image).filter(
-            Image.diary_id == diary.id,
+            Image.temp_diary_id == diary.id,
             Image.is_deleted == False
         ).all()  # 모든 관련 이미지를 가져오기
+        print(temp_diary_images)
 
     try:
         # mood와 weather 값을 Enum을 통해 문자열로 변환하여 반환
@@ -740,9 +752,19 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
     db.refresh(temp_diary)
 
     # 4. 기존 temp_diary와 연결된 모든 이미지들의 temp_diary_id를 새로운 temp_diary로 업데이트
-    for img in temp_diary_images:
-        img.temp_diary_id = temp_diary.id
-    db.commit()
+    # 4-1. diary_id와 연결된 모든 temp_diary를 조회
+    temp_diaries = db.query(TempDiary).filter(TempDiary.diary_id == diary.id).all()
+
+    # 4-2. 해당 temp_diary와 연결된 모든 이미지들의 temp_diary_id를 새로 발급받은 temp_diary_id로 업데이트
+    for temp in temp_diaries:
+        temp_images = db.query(Image).filter(
+            Image.temp_diary_id == temp.id,
+            Image.is_deleted == False
+        ).all()  # 해당 temp_diary와 연결된 모든 이미지들을 가져옵니다.
+
+        for img in temp_images:
+            img.temp_diary_id = temp_diary.id  # 새로 생성된 temp_diary_id로 업데이트
+        db.commit()
 
     # 5. 임시 다이어리의 temp_id와 함께 응답
     return {
@@ -752,6 +774,7 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
             "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
         },
     }
+
 
 @router.put("/like/{diary_id}")
 async def like_diary(diary_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
