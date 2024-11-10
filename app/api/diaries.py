@@ -98,8 +98,33 @@ async def edit_diary(
         TempDiary.date == diary.date,  # 변환된 날짜와 일치하는 조건 추가
         TempDiary.status != 1  # 상태가 1이 아닌 경우
     ).update({"status": 1})
-    db.commit()
-    db.refresh(existing_diary)
+    
+    # image_url에서 S3 URL 부분 제거
+    relative_image_url = diary.image.replace(S3_BASE_URL, "")
+
+    # diary.date를 datetime 객체로 변환
+    try:
+        diary_date = datetime.strptime(diary.date, '%Y-%m-%d')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
+    
+    # 같은 경로의 기존 이미지의 is_temp 상태를 False로 업데이트
+    date_path = f"{user_id}/{diary_date.strftime('%Y-%m-%d')}/"
+    db.query(Image).filter(
+        Image.image_url.startswith(date_path),
+        Image.is_temp == True
+    ).update({"is_temp": False})
+
+    # 새로운 이미지의 is_temp 상태를 True로 설정
+    image = db.query(Image).filter(
+        Image.image_url == relative_image_url,
+        Image.is_temp == False
+    ).first()
+    
+    if image:
+        image.is_temp = True
+        db.commit()
+        db.refresh(image)
 
 
     last_temp_diary_id = db.query(TempDiary.id).filter(
@@ -198,23 +223,16 @@ async def get_temp_diary(
     if temp_diary.story is not None:
         response_data["story"] = temp_diary.story
 
-
-    daily_image_count = get_daily_image_count(db, user_id)
-    image_count = get_image_count_for_date(db, user_id, target_date)
-    response_data["remaining_count"] = daily_image_count
-    response_data["image_count"] = image_count
-
     return {
         "status": 200,
         "message": "임시 다이어리를 조회 완료.",
         "data": response_data  # 변환된 데이터를 반환
     }
-
 @router.post("/cancel")
 async def update_temp_diary_status(
-    request: StatusUpdateRequest,  # 요청 바디로 StatusUpdateRequest 사용
+    request: StatusUpdateRequest,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id)  # 현재 사용자의 user_id 가져오기
+    user_id: int = Depends(get_current_user_id)
 ):
     try:
         formatted_date = datetime.strptime(request.date, "%Y-%m-%d").date()
@@ -222,6 +240,7 @@ async def update_temp_diary_status(
         raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다. YYYY-MM-DD 형식을 사용하세요.")
 
     user = db.query(User).filter(User.id == user_id).first()
+
     # user_id와 date가 일치하는 temp_diary 찾기
     temp_diary = db.query(TempDiary).filter(
         TempDiary.user_id == user_id,
@@ -232,12 +251,12 @@ async def update_temp_diary_status(
     if not temp_diary:
         raise HTTPException(status_code=404, detail="해당 날짜에 temp_diary가 존재하지 않습니다.")
 
-    type = request.type  # 요청 바디에서 type 필드 가져오기
+    type = request.type
 
     if type == "write":
         # 상태를 True로 업데이트
         temp_diary.status = True
-        temp_diary.updated_at = datetime.now()  # updated_at 필드 업데이트
+        temp_diary.updated_at = datetime.now()
         db.commit()
         
         return {
@@ -247,10 +266,10 @@ async def update_temp_diary_status(
         }
 
     elif type == "main":
-        
+        # 기존 temp_diary 상태를 True로 업데이트
         temp_diary.status = True
-        temp_diary.updated_at = datetime.now()  # updated_at 필드 업데이트
-        db.commit()  # 변경 사항 저장
+        temp_diary.updated_at = datetime.now()
+        db.commit()
 
         # 새로운 TempDiary 생성
         new_temp_diary = TempDiary(
@@ -259,15 +278,21 @@ async def update_temp_diary_status(
             title=None,
             weather=None,
             mood=None,
-            nickname=user.nickname,  # 여기에 적절한 nickname을 추가하세요
+            nickname=user.nickname,
             story=None,
-            status=False  # status를 True로 설정
+            status=False  # status를 False로 설정
         )
         
         db.add(new_temp_diary)
         db.commit()
-        db.refresh(new_temp_diary)  # 새로 생성된 diary의 id를 가져옴
-        
+        db.refresh(new_temp_diary)
+
+        # 기존 temp_diary와 연결된 image들의 temp_diary_id를 새로운 new_temp_diary.id로 변경
+        db.query(Image).filter(
+            Image.temp_diary_id == temp_diary.id
+        ).update({"temp_diary_id": new_temp_diary.id})
+        db.commit()
+
         return {
             "status": 201,
             "message": "새로운 임시 다이어리가 생성되었습니다.",
@@ -353,15 +378,14 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
             "is_temp_exist": False
         }
     }
-
 # /diaries/{id}
 @router.delete("/{diary_id}")
 async def delete_diary(
     diary_id: int,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id)  # 현재 사용자 ID 가져오기
+    user_id: int = Depends(get_current_user_id)
 ):
-    # 삭제할 다이어리 조회 (is_deleted가 False인 경우만)
+    # 삭제할 다이어리 조회
     diary_to_delete = db.query(DiaryModel).filter(
         DiaryModel.id == diary_id,
         DiaryModel.is_deleted.is_(False)
@@ -370,12 +394,31 @@ async def delete_diary(
     if not diary_to_delete:
         raise HTTPException(status_code=404, detail="Diary not found or already deleted")
 
-    # 현재 사용자가 해당 다이어리의 소유자인지 확인
+    # 다이어리 소유자 확인
     if diary_to_delete.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this diary")
 
-    # 논리적 삭제 처리
+    # diary와 관련된 temp_diary 항목의 is_deleted를 True로 변경
+    temp_diaries = db.query(TempDiary).filter(
+        TempDiary.diary_id == diary_id,
+        TempDiary.is_deleted.is_(False)
+    ).all()
+    for temp_diary in temp_diaries:
+        temp_diary.is_deleted = True
+
+    # temp_diary와 관련된 image 항목의 is_deleted를 True로 변경
+    image_ids = [temp_diary.id for temp_diary in temp_diaries]
+    images = db.query(Image).filter(
+        Image.temp_diary_id.in_(image_ids),
+        Image.is_deleted.is_(False)
+    ).all()
+    for image in images:
+        image.is_deleted = True
+
+    # diary의 is_deleted 필드를 True로 설정 (논리적 삭제)
     diary_to_delete.is_deleted = True
+
+    # 모든 변경 사항 커밋
     db.commit()
 
     return {
@@ -616,7 +659,6 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
         }
 
 
-
 @router.get("/{id}")
 async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     # 1. 다이어리를 조회
@@ -626,21 +668,30 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
     if not diary:
         raise HTTPException(status_code=404, detail=f"{id}번 다이어리를 찾을 수 없습니다.")
     
-    image = db.query(Image).filter(
-        Image.diary_id == diary.id,
-        Image.is_active == True,
-        Image.is_deleted == False
-    ).first()  # 첫 번째 결과만 가져오기
+    # edit 파라미터에 따라 이미지를 조회하는 방법이 달라집니다.
+    if not edit:
+        # edit=False일 때는 is_temp가 True인 이미지를 가져옵니다.
+        image = db.query(Image).filter(
+            Image.diary_id == diary.id,
+            Image.is_temp == True,
+            Image.is_deleted == False
+        ).first()  # 첫 번째 결과만 가져오기
+    else:
+        # edit=True일 때는 기존 temp_diary와 연결된 모든 이미지들을 가져옵니다.
+        temp_diary_images = db.query(Image).filter(
+            Image.diary_id == diary.id,
+            Image.is_deleted == False
+        ).all()  # 모든 관련 이미지를 가져오기
 
     try:
         # mood와 weather 값을 Enum을 통해 문자열로 변환하여 반환
-        mood = MoodEnum(diary.mood).name  # 정수를 문자열로 변환
-        weather = WeatherEnum(diary.weather).name  # 정수를 문자열로 변환
+        mood = MoodEnum(diary.mood).name
+        weather = WeatherEnum(diary.weather).name
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid mood or weather value")
     
     # 이미지 URL이 없으면 None으로 설정
-    image_url = image.image_url if image else None
+    image_url = image.image_url if not edit and image else None
 
     # 2. edit 파라미터가 없거나 false일 때는 다이어리만 반환
     if not edit:
@@ -660,7 +711,7 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
             }
         }
     
-    # 3. edit=true일 경우, 임시 다이어리 생성
+    # 3. edit=true일 경우, 기존 temp_diary 상태를 업데이트하고 새로운 임시 다이어리 생성
     db.query(TempDiary).filter(
         TempDiary.date == diary.date,
         TempDiary.user_id == user.id
@@ -683,7 +734,12 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
     db.commit()
     db.refresh(temp_diary)
 
-    # 4. 임시 다이어리의 temp_id와 함께 응답
+    # 4. 기존 temp_diary와 연결된 모든 이미지들의 temp_diary_id를 새로운 temp_diary로 업데이트
+    for img in temp_diary_images:
+        img.temp_diary_id = temp_diary.id
+    db.commit()
+
+    # 5. 임시 다이어리의 temp_id와 함께 응답
     return {
         "status": 200,
         "message": f"{id}번 다이어리 수정 준비 완료",
