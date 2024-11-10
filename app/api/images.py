@@ -93,7 +93,7 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error during image generation or upload: {str(e)}")
-
+    
 @router.get("/{temp_id}")
 async def get_images_by_temp_id(temp_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     # temp_diary 정보를 찾기
@@ -102,7 +102,6 @@ async def get_images_by_temp_id(temp_id: int, db: Session = Depends(get_db), use
         raise HTTPException(status_code=404, detail="TempDiary not found")
 
     # temp_diary에서 user_id와 date를 가져옴
-    user_id = user_id
     date = temp_diary.date.strftime("%Y-%m-%d")  # date를 "YYYY-MM-DD" 형식으로 변환
 
     # 해당 user_id와 date에 해당하는 이미지 URL들을 찾음
@@ -113,8 +112,13 @@ async def get_images_by_temp_id(temp_id: int, db: Session = Depends(get_db), use
         Image.is_deleted == False  # 삭제되지 않은 이미지만 찾기
     ).all()
 
+    # 이미지가 없으면 빈 배열 반환
     if not images:
-        raise HTTPException(status_code=404, detail="No images found for this temp_diary")
+        return {
+            "status": 200,
+            "message": "그림 목록 조회 성공",
+            "data": []
+        }
 
     # 기본 데이터 구조
     response_data = []
@@ -123,10 +127,11 @@ async def get_images_by_temp_id(temp_id: int, db: Session = Depends(get_db), use
     for index, image in enumerate(images):
         image_url = S3_BASE_URL + image.image_url  # 이미지 URL을 합침
 
+        # main_image를 가장 먼저 추가
         if image.is_temp:
-            main_image_info = {"id": image.id, "main_image": image_url}  # main_image로 설정
+            main_image_info = {"id": image.id, "image": image_url}  # main_image로 설정
         else:
-            response_data.append({"id": image.id, f"temp_image_{index+1}": image_url})  # temp_image_X 형식으로 설정
+            response_data.append({"id": image.id, "image": image_url})  # temp_image로 설정
 
     # main_image가 존재하면 response_data의 앞에 추가
     if main_image_info:
@@ -137,6 +142,7 @@ async def get_images_by_temp_id(temp_id: int, db: Session = Depends(get_db), use
         "message": "그림 목록 조회 성공",
         "data": response_data
     }
+
 
 
 @router.patch("/{image_id}")
