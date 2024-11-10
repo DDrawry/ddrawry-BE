@@ -112,7 +112,7 @@ async def generate_and_upload_image_to_s3(image_url: str, user_id: int, date: st
 
 
 # 하루 최대 이미지 생성 횟수
-MAX_DAILY_IMAGE_COUNT = 99
+MAX_DAILY_IMAGE_COUNT = 100
 
 def get_daily_image_count(db: Session, user_id: int) -> int:
     today = date.today()
