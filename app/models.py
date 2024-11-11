@@ -21,7 +21,8 @@ class Token(Base):
     
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
-    token = Column(String(255), nullable=True)
+    token = Column(String(255), nullable=True) # 엑세스 토큰
+    refresh_token = Column(String(255), nullable=True)  # 리프레시 토큰
     created_at = Column(TIMESTAMP, nullable=True)
     expires_at = Column(TIMESTAMP, nullable=True)
 
