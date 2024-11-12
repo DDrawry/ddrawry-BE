@@ -7,12 +7,9 @@ from ..utils import get_current_user_id, get_daily_image_count, get_image_count_
 from ..database import get_db
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
-from datetime import datetime
-from fastapi import HTTPException
-
+from dateutil.relativedelta import relativedelta
 import os
 
 router = APIRouter(prefix="/diaries")
@@ -499,43 +496,70 @@ async def search_diary(keyword: str, db: Session = Depends(get_db), user_id: int
 def get_datetime_by_date(date):
     return datetime.strptime(date, "%Y%m%d")
 
-# /diaries/main?type=calendar&start=20240629&end=20240801
+
+
 @router.get("/main")
 async def get_diaries(
     type: str,
-    start: str,
-    end: str,
+    date: str = None,  # 특정 월을 나타내는 'YYYYMM' 형식 (list 전용)
+    start: str = None,  # 시작 날짜 (calendar 전용)
+    end: str = None,    # 종료 날짜 (calendar 전용)
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
 ):
-    if not start or not end:
-        return {"error": {"start": start, "end": end}}
+    # type이 'list'일 때 'date' 파라미터 확인
+    if type == "list":
+        if not date:
+            return {
+                "status": 400,
+                "message": "type이 'list'일 때는 'date' 파라미터가 필요합니다."
+            }
+        try:
+            # 'YYYYMM' 형식으로 받아 해당 월의 범위 설정
+            start_date = datetime.strptime(date, "%Y%m")
+            end_date = start_date + relativedelta(months=1, days=-1)
+        except ValueError:
+            return {
+                "status": 400,
+                "message": "잘못된 date 형식입니다. 'YYYYMM' 형식을 사용하세요."
+            }
 
-    # MySQL에서 연도와 월을 추출하기 위한 DATE_FORMAT 사용
+    # type이 'calendar'일 때 'start'와 'end' 파라미터 확인
+    elif type == "calendar":
+        if not start or not end:
+            return {
+                "status": 400,
+                "message": "type이 'calendar'일 때는 'start'와 'end' 파라미터가 필요합니다."
+            }
+        try:
+            # 'YYYYMMDD' 형식으로 변환
+            start_date = datetime.strptime(start, "%Y%m%d")
+            end_date = datetime.strptime(end, "%Y%m%d")
+        except ValueError:
+            return {
+                "status": 400,
+                "message": "잘못된 날짜 형식입니다. 'YYYYMMDD' 형식을 사용하세요."
+            }
+
+    else:
+        return {
+            "status": 400,
+            "message": "잘못된 type 값입니다. 'list' 또는 'calendar'를 사용하세요.",
+        }
+
+    # 다이어리 조회 쿼리
     diaries_query = (
         db.query(DiaryModel)
         .options(joinedload(DiaryModel.images))
         .filter(
-            DiaryModel.date.between(get_datetime_by_date(start), get_datetime_by_date(end)), # start와 end 사이의 날짜 필터
-            DiaryModel.is_deleted == False,  # 삭제된 다이어리를 제외
-            DiaryModel.user_id == user_id,  # 현재 사용자의 다이어리만 조회
+            DiaryModel.date.between(start_date, end_date),
+            DiaryModel.is_deleted == False,
+            DiaryModel.user_id == user_id
         )
     )
 
-    # 다이어리가 없음
-    diaries = diaries_query.all()
-    if not diaries:
-        return {
-            "status": 200,
-            "message": f"{start}-{end}에 해당하는 다이어리가 없습니다.",
-            "data": [],
-        }
-
-    # 캘린더형 조회 (date를 기준으로 오름차순 정렬)
-    if type == "calendar":  # 오타 수정: 'calender' → 'calendar'
-        diaries_query = diaries_query.order_by(
-            DiaryModel.date.asc()
-        )  # 오름차순으로 정렬
+    if type == "calendar":
+        diaries_query = diaries_query.order_by(DiaryModel.date.asc())
         diaries = diaries_query.all()
         result = [
             {
@@ -546,12 +570,8 @@ async def get_diaries(
             }
             for diary in diaries
         ]
-
-    # 목록형 조회 (title 포함, date를 기준으로 내림차순 정렬)
     elif type == "list":
-        diaries_query = diaries_query.order_by(
-            DiaryModel.date.desc()
-        )  # 내림차순으로 정렬
+        diaries_query = diaries_query.order_by(DiaryModel.date.desc())
         diaries = diaries_query.all()
         result = [
             {
@@ -564,17 +584,13 @@ async def get_diaries(
             for diary in diaries
         ]
 
-    else:
-        return {
-            "status": 400,
-            "message": "잘못된 type 값입니다. 'list' 또는 'calendar'를 사용하세요.",
-        }
-
     return {
         "status": 200,
-        "message": f"{start}-{end}에 대한 메인 페이지 조회 완료",
+        "message": f"{start_date.strftime('%Y-%m-%d')} - {end_date.strftime('%Y-%m-%d')} 기간에 대한 메인 페이지 조회 완료",
         "data": result,
     }
+
+
 
 
 
