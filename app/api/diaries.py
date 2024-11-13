@@ -65,7 +65,6 @@ async def new_diary(
         }
     }
 
-# /diaries/{diary_id}
 @router.put("/{diary_id}")
 async def edit_diary(
     diary_id: int, 
@@ -96,8 +95,10 @@ async def edit_diary(
         TempDiary.status != 1  # 상태가 1이 아닌 경우
     ).update({"status": 1})
     
-    # image_url에서 S3 URL 부분 제거
-    relative_image_url = diary.image.replace(S3_BASE_URL, "")
+    # image_url에서 S3 URL 부분 제거 (image가 None이 아닌 경우에만)
+    relative_image_url = ""
+    if diary.image:
+        relative_image_url = diary.image.replace(S3_BASE_URL, "")
 
     # diary.date를 datetime 객체로 변환
     try:
@@ -112,17 +113,17 @@ async def edit_diary(
         Image.is_temp == True
     ).update({"is_temp": False})
 
-    # 새로운 이미지의 is_temp 상태를 True로 설정
-    image = db.query(Image).filter(
-        Image.image_url == relative_image_url,
-        Image.is_temp == False
-    ).first()
-    
-    if image:
-        image.is_temp = True
-        db.commit()
-        db.refresh(image)
-
+    # 새로운 이미지의 is_temp 상태를 True로 설정 (image가 None이 아닌 경우에만)
+    if diary.image:
+        image = db.query(Image).filter(
+            Image.image_url == relative_image_url,
+            Image.is_temp == False
+        ).first()
+        
+        if image:
+            image.is_temp = True
+            db.commit()
+            db.refresh(image)
 
     last_temp_diary_id = db.query(TempDiary.id).filter(
         TempDiary.user_id == user_id,
