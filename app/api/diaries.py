@@ -11,14 +11,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from dateutil.relativedelta import relativedelta
 import os
+from fastapi.responses import JSONResponse
+import base64
+from calendar import monthrange
 
 router = APIRouter(prefix="/diaries")
-
 load_dotenv()
-
 S3_BASE_URL= os.getenv("S3_BASE_URL")
-
-
 
 @router.post("")
 async def new_diary(
@@ -37,7 +36,6 @@ async def new_diary(
         created_at=datetime.now(),
         updated_at=datetime.now(),
     )
-    
     db.add(new_diary)
     db.commit()
     db.refresh(new_diary)
@@ -73,13 +71,11 @@ async def edit_diary(
     user_id: int = Depends(get_current_user_id)
 ):
     existing_diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
-
     if not existing_diary:
         raise HTTPException(status_code=404, detail="Diary not found")
-
     if existing_diary.user_id != user_id:  # 소유자 검증 로직 추가
         raise HTTPException(status_code=403, detail="You do not have permission to edit this diary")
-
+    
     # 다이어리 업데이트
     existing_diary.title = diary.title
     existing_diary.story = diary.story or ""  # story가 없으면 빈 문자열
@@ -99,7 +95,7 @@ async def edit_diary(
     relative_image_url = ""
     if diary.image:
         relative_image_url = diary.image.replace(S3_BASE_URL, "")
-
+    
     # diary.date를 datetime 객체로 변환
     try:
         diary_date = datetime.strptime(diary.date, '%Y-%m-%d')
@@ -119,7 +115,6 @@ async def edit_diary(
             Image.image_url == relative_image_url,
             Image.is_temp == False
         ).first()
-        
         if image:
             image.is_temp = True
             db.commit()
@@ -143,14 +138,12 @@ async def edit_diary(
 async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     # 이미 존재하는 temp_diary가 있는지 확인
     existing_temp_diary = db.query(TempDiary).filter(TempDiary.id == temp_id).first()
-
     # 존재하지 않는다면 404 에러를 발생시킴
     if not existing_temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
-    
     if existing_temp_diary.user_id != user_id:
         raise HTTPException(status_code=403, detail="해당 사용자가 아닙니다.")
-
+    
     # 필요한 경우에만 필드를 업데이트
     if "title" in diary:
         existing_temp_diary.title = diary["title"] if diary["title"] != "" else None
@@ -180,16 +173,12 @@ async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db), us
             "temp_id": existing_temp_diary.id
         }
     }
-
-
-
 @router.get("/temp/{temp_id}")
 async def get_temp_diary(
     temp_id: int, 
     db: Session = Depends(get_db), 
     user_id: int = Depends(get_current_user_id)
 ):
-    
     # 현재 로그인한 유저 정보를 조회
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -202,9 +191,7 @@ async def get_temp_diary(
 
     # 필요한 데이터 반환 (NULL 값은 포함하지 않음)
     response_data = {}
-
     # temp_diary의 각 필드가 존재할 경우에만 추가
-    
     if temp_diary.id is not None:
         response_data["temp_id"] = temp_diary.id
     if temp_diary.date is not None:  # temp_diary에 date가 존재하는지 확인
@@ -231,6 +218,7 @@ async def get_temp_diary(
         "message": "임시 다이어리를 조회 완료.",
         "data": response_data  # 변환된 데이터를 반환
     }
+
 @router.post("/cancel")
 async def update_temp_diary_status(
     request: StatusUpdateRequest,
@@ -243,31 +231,26 @@ async def update_temp_diary_status(
         raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다. YYYY-MM-DD 형식을 사용하세요.")
 
     user = db.query(User).filter(User.id == user_id).first()
-
     # user_id와 date가 일치하는 temp_diary 찾기
     temp_diary = db.query(TempDiary).filter(
         TempDiary.user_id == user_id,
         TempDiary.date == formatted_date,
         TempDiary.status == 0
     ).first()
-
     if not temp_diary:
         raise HTTPException(status_code=404, detail="해당 날짜에 temp_diary가 존재하지 않습니다.")
 
     type = request.type
-
     if type == "write":
         # 상태를 True로 업데이트
         temp_diary.status = True
         temp_diary.updated_at = datetime.now()
         db.commit()
-        
         return {
             "status": 200,
             "message": "상태가 업데이트되었습니다.",
             "data": {"temp_id": temp_diary.id}
         }
-
     elif type == "main":
         # 기존 temp_diary 상태를 True로 업데이트
         temp_diary.status = True
@@ -285,7 +268,6 @@ async def update_temp_diary_status(
             story=None,
             status=False  # status를 False로 설정
         )
-        
         db.add(new_temp_diary)
         db.commit()
         db.refresh(new_temp_diary)
@@ -301,7 +283,6 @@ async def update_temp_diary_status(
             "message": "새로운 임시 다이어리가 생성되었습니다.",
             "data": {"temp_id": new_temp_diary.id}
         }
-
 
 # /diaries?date=20240813
 @router.get("")
@@ -321,7 +302,6 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
 
     # user_id로 사용자 nickname 조회
     user = db.query(User).filter(User.id == user_id).first()
-
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
 
@@ -393,6 +373,7 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
             "is_temp_exist": False
         }
     }
+
 # /diaries/{id}
 @router.delete("/{diary_id}")
 async def delete_diary(
@@ -405,10 +386,9 @@ async def delete_diary(
         DiaryModel.id == diary_id,
         DiaryModel.is_deleted.is_(False)
     ).first()
-
     if not diary_to_delete:
         raise HTTPException(status_code=404, detail="Diary not found or already deleted")
-
+    
     # 다이어리 소유자 확인
     if diary_to_delete.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this diary")
@@ -435,13 +415,11 @@ async def delete_diary(
 
     # 모든 변경 사항 커밋
     db.commit()
-
     return {
         "status": 200,
         "message": "다이어리 삭제 성공",
         "id": diary_id
     }
-
 
 # /diaries/search/{keyword}
 @router.get("/search")
@@ -478,7 +456,6 @@ async def search_diary(keyword: str, db: Session = Depends(get_db), user_id: int
         # diary에 연결된 이미지 가져오기
         image = db.query(Image).filter(Image.diary_id == diary.id, Image.is_active == True).first()
         image_url = image.image_url if image else None  # 이미지가 있으면 URL, 없으면 None
-
         results.append({
             "id": diary.id,
             "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 포맷
@@ -493,60 +470,55 @@ async def search_diary(keyword: str, db: Session = Depends(get_db), user_id: int
         "data": results,
     }
 
-
 def get_datetime_by_date(date):
     return datetime.strptime(date, "%Y%m%d")
-
-
 
 @router.get("/main")
 async def get_diaries(
     type: str,
-    date: str = None,  # 특정 월을 나타내는 'YYYYMM' 형식 (list 전용)
-    start: str = None,  # 시작 날짜 (calendar 전용)
-    end: str = None,    # 종료 날짜 (calendar 전용)
+    date: str = None,
+    start: str = None,
+    end: str = None,
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
 ):
     # type이 'list'일 때 'date' 파라미터 확인
     if type == "list":
         if not date:
-            return {
-                "status": 400,
-                "message": "type이 'list'일 때는 'date' 파라미터가 필요합니다."
-            }
+            raise HTTPException(
+                status_code=400,
+                detail="type이 'list'일 때는 'date' 파라미터가 필요합니다."
+            )
         try:
-            # 'YYYYMM' 형식으로 받아 해당 월의 범위 설정
             start_date = datetime.strptime(date, "%Y%m")
             end_date = start_date + relativedelta(months=1, days=-1)
         except ValueError:
-            return {
-                "status": 400,
-                "message": "잘못된 date 형식입니다. 'YYYYMM' 형식을 사용하세요."
-            }
+            raise HTTPException(
+                status_code=400,
+                detail="잘못된 date 형식입니다. 'YYYYMM' 형식을 사용하세요."
+            )
 
     # type이 'calendar'일 때 'start'와 'end' 파라미터 확인
     elif type == "calendar":
         if not start or not end:
-            return {
-                "status": 400,
-                "message": "type이 'calendar'일 때는 'start'와 'end' 파라미터가 필요합니다."
-            }
+            raise HTTPException(
+                status_code=400,
+                detail="type이 'calendar'일 때는 'start'와 'end' 파라미터가 필요합니다."
+            )
         try:
-            # 'YYYYMMDD' 형식으로 변환
             start_date = datetime.strptime(start, "%Y%m%d")
             end_date = datetime.strptime(end, "%Y%m%d")
         except ValueError:
-            return {
-                "status": 400,
-                "message": "잘못된 날짜 형식입니다. 'YYYYMMDD' 형식을 사용하세요."
-            }
+            raise HTTPException(
+                status_code=400,
+                detail="잘못된 날짜 형식입니다. 'YYYYMMDD' 형식을 사용하세요."
+            )
 
     else:
-        return {
-            "status": 400,
-            "message": "잘못된 type 값입니다. 'list' 또는 'calendar'를 사용하세요.",
-        }
+        raise HTTPException(
+            status_code=400,
+            detail="잘못된 type 값입니다. 'list' 또는 'calendar'를 사용하세요."
+        )
 
     # 다이어리 조회 쿼리
     diaries_query = (
@@ -561,7 +533,13 @@ async def get_diaries(
 
     if type == "calendar":
         diaries_query = diaries_query.order_by(DiaryModel.date.asc())
-        diaries = diaries_query.all()
+    elif type == "list":
+        diaries_query = diaries_query.order_by(DiaryModel.date.desc())
+
+    diaries = diaries_query.all()
+    
+    # result 리스트 생성
+    if type == "calendar":
         result = [
             {
                 "id": diary.id,
@@ -571,14 +549,12 @@ async def get_diaries(
             }
             for diary in diaries
         ]
-    elif type == "list":
-        diaries_query = diaries_query.order_by(DiaryModel.date.desc())
-        diaries = diaries_query.all()
+    else:  # type이 'list'일 때
         result = [
             {
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
-                "title": diary.title,
+                "title": getattr(diary, "title", None),
                 "image": diary.images[0].image_url if diary.images else "띠로리로고",
                 "bookmark": diary.like,
             }
@@ -593,21 +569,14 @@ async def get_diaries(
 
 
 
-
-
-
 # 전체/월별
 # /diaries/like 
 # 좋아요를 누른 다이어리들 조회 API
 @router.get("/like")
 async def get_like_diaries(type: str, date: str = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)): 
-    user_id = user_id
     if type == "month" and date and len(date) == 6:
         year = int(date[:4])
         month = int(date[4:])
-        
-        # Calculate the correct last day of the month
-        from calendar import monthrange
         last_day = monthrange(year, month)[1]
         
         # Query liked diaries for the specified month and year, ordered by date in descending order
@@ -634,9 +603,7 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
                 Image.is_active == True,
                 Image.is_deleted == False
             ).first()  # get the first image
-
             image_url = image.image_url if image else None
-
             result.append({
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
@@ -675,9 +642,7 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
                 Image.is_active == True,
                 Image.is_deleted == False
             ).first()  # get the first image
-
             image_url = image.image_url if image else None
-
             result.append({
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
@@ -691,7 +656,7 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             "message": "모든 좋아요를 누른 일기 조회 완료",
             "data": result,
         }
-    
+
 @router.get("/{id}")
 async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     # 1. 다이어리를 조회
@@ -769,16 +734,12 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
     db.refresh(temp_diary)
 
     # 4. 기존 temp_diary와 연결된 모든 이미지들의 temp_diary_id를 새로운 temp_diary로 업데이트
-    # 4-1. diary_id와 연결된 모든 temp_diary를 조회
     temp_diaries = db.query(TempDiary).filter(TempDiary.diary_id == diary.id).all()
-
-    # 4-2. 해당 temp_diary와 연결된 모든 이미지들의 temp_diary_id를 새로 발급받은 temp_diary_id로 업데이트
     for temp in temp_diaries:
         temp_images = db.query(Image).filter(
             Image.temp_diary_id == temp.id,
             Image.is_deleted == False
         ).all()  # 해당 temp_diary와 연결된 모든 이미지들을 가져옵니다.
-
         for img in temp_images:
             img.temp_diary_id = temp_diary.id  # 새로 생성된 temp_diary_id로 업데이트
         db.commit()
@@ -791,7 +752,6 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
             "temp_id": temp_diary.id  # 새로 생성된 temp_id 반환
         },
     }
-
 
 @router.put("/like/{diary_id}")
 async def like_diary(diary_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
@@ -825,10 +785,6 @@ async def like_diary(diary_id: int, db: Session = Depends(get_db), user_id: int 
                 "bookmark": diary.like
             }
         }
-    
-import base64
-
-
 
 @router.post("/share")
 async def share_diary_image(
@@ -871,4 +827,3 @@ async def share_diary_image(
             "image_url": S3_BASE_URL + s3_url
         }
     }
-    
