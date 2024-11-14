@@ -26,7 +26,9 @@ jobs:
             cd /home/ubuntu/ddrawry-BE
             git pull origin dev
             docker info                       # Docker가 제대로 작동하는지 확인
-            docker compose down
-            docker compose build
-            docker compose up -d
+            # 기존 컨테이너가 있으면 삭제
+            docker rm -f ddrawry-be || true
+            docker compose down              # 기존 컨테이너와 네트워크 종료
+            docker compose build             # 새로운 이미지를 빌드
+            docker compose up -d             # 백그라운드로 컨테이너 실행
             
