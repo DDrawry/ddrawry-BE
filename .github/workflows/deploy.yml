@@ -20,13 +20,13 @@ jobs:
           username: ubuntu                             # 서버의 사용자명
           key: ${{ secrets.SERVER_SSH_KEY }}           # SSH private key
           port: 22                                     # SSH 포트 (기본값은 22)
+
           script: |
+            whoami
             cd /home/ubuntu/ddrawry-BE
+            git pull origin dev
+            docker info                       # Docker가 제대로 작동하는지 확인
+            docker compose down
+            docker compose build
+            docker compose up -d
             
-            # 기존 Docker 컨테이너 중지 및 삭제
-            docker stop ddrawry-be || true
-            docker rm ddrawry-be || true
-            
-            # Docker 이미지 빌드 및 실행
-            docker build -t ddrawry-be .
-            docker run -d --name ddrawry-be -p 80:80 ddrawry-be
