@@ -165,66 +165,84 @@ async def kakao_logout(
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-@router.get("/refresh")
-async def refresh_token(request: Request, db: Session = Depends(get_db)):
-    refresh_token = request.cookies.get("refresh_token")
-    if not refresh_token:
-        raise HTTPException(status_code=401, detail="Missing JWT refresh token")
+@router.get("/kakao/refresh")
+async def kakao_refresh_token(user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
+    # 1. DB에서 특정 사용자의 카카오 리프레시 토큰 조회
+    token_entry = db.query(Token).filter(Token.user_id == user_id).first()
+    if not token_entry or not token_entry.refresh_token:
+        raise HTTPException(status_code=404, detail="Token not found for the user")
+
+    refresh_token = token_entry.refresh_token
 
     try:
-        # 1. JWT 리프레시 토큰을 검증하여 사용자 ID 확인
+        # 2. 카카오 리프레시 토큰을 사용하여 새로운 카카오 액세스 토큰 요청
+        kakao_token_url = "https://kauth.kakao.com/oauth/token"
+        data = {
+            "grant_type": "refresh_token",
+            "client_id": KAKAO_CLIENT_ID,
+            "refresh_token": refresh_token,  # DB에서 가져온 리프레시 토큰 사용
+        }
+
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(kakao_token_url, data=data)
+            if token_response.status_code != 200:
+                raise HTTPException(status_code=401, detail="Kakao refresh token request failed")
+
+            # 3. 새로운 액세스 토큰과 만료 시간 계산
+            token_json = token_response.json()
+            new_access_token = token_json.get("access_token")
+            expires_in = token_json.get("expires_in")  # 만료 시간 (초 단위)
+
+            # 4. DB에 새로운 액세스 토큰 및 만료 시간 갱신
+            token_entry.token = new_access_token
+            token_entry.expires_at = datetime.now() + timedelta(seconds=expires_in)
+            db.commit()
+
+        return {
+            "status": 200,
+            "message": "토큰 갱신 성공",
+            "data": {
+                "access_token": new_access_token
+            }
+        }
+
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"Kakao API request error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/refresh")
+async def refresh_token(request: Request):
+    refresh_token = request.cookies.get("refresh_token")
+
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
+
+    try:
+        # 리프레시 토큰 디코드
         refresh_payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = refresh_payload.get("user_id")
 
-        # 2. DB에서 카카오 액세스 토큰 및 만료 시간 조회
-        token_entry = db.query(Token).filter(Token.user_id == user_id).order_by(Token.created_at.desc()).first()
-        if not token_entry:
-            raise HTTPException(status_code=404, detail="Token not found")
+        # 새로운 액세스 토큰 생성
+        new_access_payload = {
+            "user_id": user_id,
+            "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),  # 30분으로 설정
+        }
+        new_access_token = jwt.encode(new_access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-        # 3. 토큰 만료 시간이 지난 경우에만 새 카카오 액세스 토큰 요청
-        if token_entry.expires_at <= datetime.now():
-            kakao_token_url = "https://kauth.kakao.com/oauth/token"
-            data = {
-                "grant_type": "refresh_token",
-                "client_id": KAKAO_CLIENT_ID,
-                "refresh_token": token_entry.refresh_token,  # DB에 저장된 카카오 리프레시 토큰 사용
+        # JSON 형태로 토큰 및 만료 시간 반환
+        return {
+            "status": 200,
+            "message": "토큰 갱신 성공",
+            "data": {
+                "access_token": new_access_token
             }
-
-            async with httpx.AsyncClient() as client:
-                token_response = await client.post(kakao_token_url, data=data)
-                if token_response.status_code != 200:
-                    raise HTTPException(status_code=401, detail="Kakao 리프레시 토큰 요청 실패")
-
-                # 4. 새로운 액세스 토큰과 만료 시간 계산
-                token_json = token_response.json()
-                new_access_token = token_json.get("access_token")
-
-                # 5. DB에 새 카카오 액세스 토큰과 만료 시각 갱신
-                token_entry.token = new_access_token
-                token_entry.expires_at = datetime.now() + timedelta(hours=6)  # 새로운 6시간짜리 만료 시간 예상
-                db.commit()
-
-            return {
-                "status": 200,
-                "message": "토큰 갱신 성공",
-                "data": {
-                    "access_token": new_access_token
-                }
-            }
-        else:
-            # 만료되지 않은 기존 액세스 토큰이 있는 경우 해당 토큰을 반환
-            return {
-                "status": 200,
-                "message": "유효한 토큰이 이미 존재합니다.",
-                "data": {
-                    "access_token": token_entry.token
-                }
-            }
+        }
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="JWT refresh token has expired")
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid JWT refresh token")
-
+        raise HTTPException(status_code=401, detail="Refresh token has expired")
+    except PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
 
 @router.delete("/", response_model=dict)
 async def delete_user(
