@@ -7,12 +7,9 @@ services:
       - '8000:8000'
     restart: always
     volumes:
-      - ./ddrawry-be/app:/app  # 로컬의 ./ddrawry/app 디렉토리를 컨테이너의 /app 디렉토리에 마운트
+      - ./app:/ddrawry/app
       - ./log/gunicorn:/log
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - KAKAO_CLIENT_ID=${KAKAO_CLIENT_ID}
       - JWT_SECRET=${JWT_SECRET}
-
-volumes:
-  mysql-data:
