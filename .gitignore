@@ -39,6 +39,8 @@ docker-compose.override.yml
 # macOS
 .DS_Store
 
+.env
+ 
 # Ubuntu 관련
 *.bak  # 백업 파일
 *.swp  # vim 스왑 파일

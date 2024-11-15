@@ -15,6 +15,7 @@ WORKDIR /ddrawry
 RUN pip install poetry
 RUN poetry config virtualenvs.create false
 RUN poetry install
+RUN poetry add gunicorn
 
 # 나머지 애플리케이션 파일 복사
 COPY . /ddrawry/

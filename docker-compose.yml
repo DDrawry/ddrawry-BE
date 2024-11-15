@@ -8,7 +8,6 @@ services:
     restart: always
     volumes:
       - ./log/gunicorn:/log
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - KAKAO_CLIENT_ID=${KAKAO_CLIENT_ID}
-      - JWT_SECRET=${JWT_SECRET}
+    env_file: 
+      - .env  # .env 파일 전체 로드
+

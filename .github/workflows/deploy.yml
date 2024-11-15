@@ -1,34 +1,34 @@
-# name: ddrawry-BE
+name: ddrawry-BE
 
-# on:
-#   push:
-#     branches:
-#       - dev  # dev 브랜치에 push 또는 merge 될 때 트리거
+on:
+  push:
+    branches:
+      - dev  # dev 브랜치에 push 또는 merge 될 때 트리거
 
-# jobs:
-#   deploy:
-#     runs-on: ubuntu-latest  # GitHub Actions 실행 환경
+jobs:
+  deploy:
+    runs-on: ubuntu-latest  # GitHub Actions 실행 환경
     
-#     steps:
-#       - name: Check out the repository
-#         uses: actions/checkout@v2
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v2
 
-#       - name: SSH to server and deploy
-#         uses: appleboy/ssh-action@v0.1.6
-#         with:
-#           host: ${{ secrets.SERVER_HOST }}            # 서버 IP 주소 (43.203.213.139)
-#           username: ubuntu                             # 서버의 사용자명
-#           key: ${{ secrets.SERVER_SSH_KEY }}           # SSH private key
-#           port: 22                                     # SSH 포트 (기본값은 22)
+      - name: SSH to server and deploy
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.SERVER_HOST }}            # 서버 IP 주소 (43.203.213.139)
+          username: ubuntu                             # 서버의 사용자명
+          key: ${{ secrets.SERVER_SSH_KEY }}           # SSH private key
+          port: 22                                     # SSH 포트 (기본값은 22)
 
-#           script: |
-#             whoami
-#             cd /home/ubuntu/ddrawry-BE
-#             git pull origin dev
-#             docker info                       # Docker가 제대로 작동하는지 확인
-#             # 기존 컨테이너가 있으면 삭제
-#             docker rm -f ddrawry-be || true
-#             docker compose down              # 기존 컨테이너와 네트워크 종료
-#             docker compose build             # 새로운 이미지를 빌드
-#             docker compose up -d             # 백그라운드로 컨테이너 실행
+          script: |
+            whoami
+            cd /home/ubuntu/ddrawry-BE
+            git pull origin dev
+            docker info                       # Docker가 제대로 작동하는지 확인
+            # 기존 컨테이너가 있으면 삭제
+            docker rm -f ddrawry-be || true
+            docker compose down              # 기존 컨테이너와 네트워크 종료
+            docker compose build             # 새로운 이미지를 빌드
+            docker compose up -d             # 백그라운드로 컨테이너 실행
             
