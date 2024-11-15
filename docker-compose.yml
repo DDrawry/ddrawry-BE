@@ -1,13 +1,12 @@
 services:
   ddrawry-be:
-    container_name: 'ddrawry-be'  # 컨테이너 이름을 ddrawry로 설정
+    container_name: 'ddrawry-be'
     build:
       context: .
     ports:
       - '8000:8000'
     restart: always
     volumes:
-      - ./app:/ddrawry/app
       - ./log/gunicorn:/log
     environment:
       - DATABASE_URL=${DATABASE_URL}
