@@ -10,6 +10,9 @@ ls -la
 echo "Running database migrations..."
 poetry run alembic upgrade head
 
+# PYTHONPATH 설정
+export PYTHONPATH=/ddrawry
+
 # FastAPI 애플리케이션을 Gunicorn + Uvicorn worker로 실행
 echo "Starting FastAPI application..."
 exec gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 app.main:app
