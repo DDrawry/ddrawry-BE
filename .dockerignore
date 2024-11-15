@@ -1,0 +1,42 @@
+# Git 및 버전 관리 관련 파일
+.git
+.gitignore
+
+# Python 캐시 파일
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE 및 편집기 관련 파일
+.vscode/
+.idea/
+*.swp
+
+# OS 및 사용자 환경 관련 파일
+.DS_Store
+Thumbs.db
+
+# 로그 파일
+log/
+*.log
+
+# Python 패키지
+*.egg
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+
+# Virtual environments
+.env
+venv/
+*.venv/
+
+
+# 임시 파일
+*.tmp
+*.bak
+*.old
+
+# 추가적으로 제외할 파일이나 디렉토리가 있다면 여기에 추가
