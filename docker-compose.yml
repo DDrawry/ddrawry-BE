@@ -7,7 +7,7 @@ services:
       - '8000:8000'
     restart: always
     volumes:
-      - ./app:/ddrawry/app
+      - ./ddrawry-be/app:/app  # 로컬의 ./ddrawry/app 디렉토리를 컨테이너의 /app 디렉토리에 마운트
       - ./log/gunicorn:/log
     environment:
       - DATABASE_URL=${DATABASE_URL}
