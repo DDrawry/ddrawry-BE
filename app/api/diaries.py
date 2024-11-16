@@ -660,8 +660,10 @@ async def get_diaries(
     # result 리스트 생성
     result = []
     for diary, image in diaries_with_images:
+        if image and image.is_temp == 0:
+            continue
         # is_temp 조건에 따른 이미지 URL 설정
-        image_url = S3_BASE_URL + image.image_url if image and image.is_temp == 1 else None
+        image_url = S3_BASE_URL + image.image_url if image else None
 
         # 응답 데이터 구조 생성
         diary_data = {
