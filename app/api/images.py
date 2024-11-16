@@ -100,24 +100,27 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
         raise HTTPException(status_code=500, detail=f"Error during image generation or upload: {str(e)}")
     
 @router.get("/{temp_id}")
-async def get_images_by_temp_id(temp_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    # temp_diary 정보를 찾기
+async def get_images_by_temp_id(
+    temp_id: int,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)
+):
+    # TempDiary 정보 확인
     temp_diary = db.query(TempDiary).filter(TempDiary.id == temp_id).first()
     if not temp_diary:
         raise HTTPException(status_code=404, detail="TempDiary not found")
+    
+    # TempDiary에서 user_id와 date 정보 추출
+    date = temp_diary.date.strftime("%Y-%m-%d")  # "YYYY-MM-DD" 형식으로 변환
 
-    # temp_diary에서 user_id와 date를 가져옴
-    date = temp_diary.date.strftime("%Y-%m-%d")  # date를 "YYYY-MM-DD" 형식으로 변환
-
-    # 해당 user_id와 date에 해당하는 이미지 URL들을 찾음
+    # Image 모델에서 조건에 맞는 이미지 조회
     images = db.query(Image).filter(
-        Image.temp_diary_id == temp_id,
-        Image.image_url.like(f"{user_id}/{date}%"),  # image_url이 {user_id}/{date}로 시작하는 이미지만 찾기
-        Image.is_active == True,  # 활성화된 이미지만 찾기
-        Image.is_deleted == False  # 삭제되지 않은 이미지만 찾기
+        Image.image_url.startswith(f"{user_id}/{date}/"),  # user_id와 date로 시작하는 이미지
+        Image.is_active == True,  # 활성화된 이미지
+        Image.is_deleted == False  # 삭제되지 않은 이미지
     ).all()
 
-    # 이미지가 없으면 빈 배열 반환
+    # 이미지가 없을 경우 빈 데이터 반환
     if not images:
         return {
             "status": 200,
@@ -125,29 +128,27 @@ async def get_images_by_temp_id(temp_id: int, db: Session = Depends(get_db), use
             "data": []
         }
 
-    # 기본 데이터 구조
+    # 응답 데이터 구성
     response_data = []
-    main_image_info = None  # main_image 정보를 저장할 변수
+    main_image_info = None  # Main Image 정보를 저장할 변수
 
-    for index, image in enumerate(images):
-        image_url = S3_BASE_URL + image.image_url  # 이미지 URL을 합침
-
-        # main_image를 가장 먼저 추가
-        if image.is_temp:
-            main_image_info = {"id": image.id, "image": image_url}  # main_image로 설정
+    for image in images:
+        image_url = S3_BASE_URL + image.image_url  # S3 경로 추가
+        # Main Image 여부 확인
+        if image.is_temp:  
+            main_image_info = {"id": image.id, "image": image_url}  # Main Image
         else:
-            response_data.append({"id": image.id, "image": image_url})  # temp_image로 설정
+            response_data.append({"id": image.id, "image": image_url})  # Temp Image
 
-    # main_image가 존재하면 response_data의 앞에 추가
+    # Main Image가 있으면 리스트의 첫 번째에 추가
     if main_image_info:
-        response_data.insert(0, main_image_info)  # main_image 정보를 리스트의 첫 번째에 추가
+        response_data.insert(0, main_image_info)
 
     return {
         "status": 200,
         "message": "그림 목록 조회 성공",
         "data": response_data
     }
-
 
 @router.delete("/{image_id}")
 async def delete_image(image_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
