@@ -15,9 +15,4 @@ export PYTHONPATH=/ddrawry
 
 # FastAPI 애플리케이션을 Gunicorn + Uvicorn worker로 실행
 echo "Starting FastAPI application..."
-exec gunicorn -k uvicorn.workers.UvicornWorker \
-    --bind 0.0.0.0:8000 \
-    --timeout 120 \  # 120초로 타임아웃 설정
-    --access-logfile - \
-    --error-logfile - \
-    app.main:app
+exec gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 app.main:app
