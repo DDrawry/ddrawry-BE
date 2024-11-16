@@ -185,10 +185,14 @@ async def edit_diary(
     }
 
 @router.put("/temp/{temp_id}")
-async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    # 이미 존재하는 temp_diary가 있는지 확인
+async def save_temp(
+    temp_id: int,
+    diary: dict,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)
+):
+    # 임시 다이어리가 존재하는지 확인
     existing_temp_diary = db.query(TempDiary).filter(TempDiary.id == temp_id).first()
-    # 존재하지 않는다면 404 에러를 발생시킴
     if not existing_temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
     if existing_temp_diary.user_id != user_id:
@@ -207,24 +211,36 @@ async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db), us
         existing_temp_diary.date = diary["date"] if diary["date"] != "" else None
     if "nickname" in diary:
         existing_temp_diary.nickname = diary["nickname"] if diary["nickname"] != "" else None
-    if "image" in diary:
-        existing_temp_diary.image = diary["image"] if diary["image"] != "" else None
 
     # 수정된 시간 기록
     existing_temp_diary.updated_at = datetime.now(timezone.utc)
 
     # 다이어리 날짜 파싱
     try:
-        diary_date = datetime.strptime(existing_temp_diary.date, '%Y-%m-%d')  # 다이어리의 날짜 사용
+        diary_date = datetime.strptime(existing_temp_diary.date, '%Y-%m-%d')
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
     
     # 기존 이미지 경로 업데이트
     date_path = f"{user_id}/{diary_date.strftime('%Y-%m-%d')}/"
     db.query(Image).filter(
-        Image.image_url.startswith(date_path),  # 해당 날짜와 경로를 기준으로 필터링
-        Image.is_temp == True  # 임시 상태인 이미지만 선택
+        Image.image_url.startswith(date_path),
+        Image.is_temp == True
     ).update({"is_temp": False})
+
+    # 전달받은 이미지 URL 처리
+    if "image" in diary and diary["image"]:
+        image_url = diary["image"].replace("https://ddrawry-bucket-test-1.s3.ap-northeast-2.amazonaws.com/", "")
+        image = db.query(Image).filter(
+            Image.image_url == image_url
+        ).first()
+
+        if not image:
+            raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.")
+        
+        # 이미지의 temp_diary_id 업데이트
+        image.temp_diary_id = temp_id
+        image.is_temp = True  # 새롭게 지정된 이미지로 임시 상태 설정
 
     # 변경사항을 DB에 커밋
     db.commit()
@@ -236,6 +252,7 @@ async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db), us
             "temp_id": existing_temp_diary.id
         }
     }
+
 @router.get("/temp/{temp_id}")
 async def get_temp_diary(
     temp_id: int, 
