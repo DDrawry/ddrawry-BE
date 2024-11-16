@@ -26,16 +26,16 @@ def get_current_user_id(authorization: str = Header(None)):
     try:
         token_type, access_token = authorization.split()
         if token_type.lower() != "bearer":
-            raise HTTPException(status_code=403, detail="유효하지 않은 인증 형식입니다.")
+            raise HTTPException(status_code=401, detail="유효하지 않은 인증 형식입니다.")
 
         payload = jwt.decode(access_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload.get("user_id")
     except ValueError:
-        raise HTTPException(status_code=400, detail="잘못된 Authorization 헤더 형식입니다.")
+        raise HTTPException(status_code=401, detail="잘못된 Authorization 헤더 형식입니다.")
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=419, detail="JWT 토큰이 만료되었습니다.")
+        raise HTTPException(status_code=401, detail="JWT 토큰이 만료되었습니다.")
     except jwt.PyJWTError:
-        raise HTTPException(status_code=403, detail="유효하지 않은 JWT 토큰입니다.")
+        raise HTTPException(status_code=401, detail="유효하지 않은 JWT 토큰입니다.")
 
 
 # utils.py
