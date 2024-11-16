@@ -25,6 +25,7 @@ async def new_diary(
     db: Session = Depends(get_db), 
     user_id: int = Depends(get_current_user_id)
 ):
+    # 다이어리 생성
     new_diary = DiaryModel(
         user_id=user_id,
         title=diary.title,
@@ -40,6 +41,43 @@ async def new_diary(
     db.commit()
     db.refresh(new_diary)
 
+    # 이미지 URL에서 S3 경로 부분 제거 (image가 None이 아닌 경우)
+    relative_image_url = ""
+    if diary.image:
+        relative_image_url = diary.image.replace(S3_BASE_URL, "")
+    
+    # diary.date를 datetime 객체로 변환
+    try:
+        diary_date = datetime.strptime(diary.date, '%Y-%m-%d')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
+    
+    # 같은 경로의 기존 이미지의 is_temp 상태를 False로 업데이트
+    date_path = f"{user_id}/{diary_date.strftime('%Y-%m-%d')}/"
+    db.query(Image).filter(
+        Image.image_url.startswith(date_path),
+        Image.is_temp == True
+    ).update({"is_temp": False})
+
+    # 새로운 이미지의 is_temp 상태를 True로 설정 (image가 None이 아닌 경우에만)
+    if diary.image:
+        image = db.query(Image).filter(
+            Image.image_url == relative_image_url,
+            Image.is_temp == False
+        ).first()
+        if image:
+            image.is_temp = True
+            image.diary_id = new_diary.id  # 다이어리 ID 연결
+            db.commit()
+            db.refresh(image)
+
+    # 같은 날짜의 다른 다이어리의 is_deleted를 True로 업데이트
+    db.query(DiaryModel).filter(
+        DiaryModel.user_id == user_id,
+        DiaryModel.date == diary.date,
+        DiaryModel.id != new_diary.id  # 새로 생성된 다이어리는 제외
+    ).update({"is_deleted": True})
+
     # 새로 생성된 다이어리와 같은 날짜의 temp_diary 상태를 1로 업데이트
     db.query(TempDiary).filter(
         TempDiary.user_id == user_id,
@@ -49,6 +87,7 @@ async def new_diary(
     
     db.commit()
     
+    # 생성된 TempDiary의 ID 가져오기
     last_temp_diary_id = db.query(TempDiary.id).filter(
         TempDiary.user_id == user_id,
         TempDiary.date == diary.date
@@ -62,6 +101,7 @@ async def new_diary(
             "temp_id": last_temp_diary_id[0] if last_temp_diary_id else None  # Last TempDiary id
         }
     }
+
 
 @router.put("/{diary_id}")
 async def edit_diary(
@@ -120,6 +160,22 @@ async def edit_diary(
             db.commit()
             db.refresh(image)
 
+    # 같은 날짜의 다른 다이어리의 is_deleted를 True로 업데이트
+    db.query(DiaryModel).filter(
+        DiaryModel.user_id == user_id,
+        DiaryModel.date == diary.date,
+        DiaryModel.id != new_diary.id  # 새로 생성된 다이어리는 제외
+    ).update({"is_deleted": True})
+
+    # 새로 생성된 다이어리와 같은 날짜의 temp_diary 상태를 1로 업데이트
+    db.query(TempDiary).filter(
+        TempDiary.user_id == user_id,
+        TempDiary.date == diary.date,  # 변환된 날짜와 일치하는 조건 추가
+        TempDiary.status != 1  # 상태가 1이 아닌 경우
+    ).update({"status": 1})
+    
+    db.commit()
+
     last_temp_diary_id = db.query(TempDiary.id).filter(
         TempDiary.user_id == user_id,
         TempDiary.date == diary.date
@@ -163,6 +219,19 @@ async def save_temp(temp_id: int, diary: dict, db: Session = Depends(get_db), us
     # 수정된 시간 기록
     existing_temp_diary.updated_at = datetime.now(timezone.utc)
 
+    # 다이어리 날짜 파싱
+    try:
+        diary_date = datetime.strptime(existing_temp_diary.date, '%Y-%m-%d')  # 다이어리의 날짜 사용
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
+    
+    # 기존 이미지 경로 업데이트
+    date_path = f"{user_id}/{diary_date.strftime('%Y-%m-%d')}/"
+    db.query(Image).filter(
+        Image.image_url.startswith(date_path),  # 해당 날짜와 경로를 기준으로 필터링
+        Image.is_temp == True  # 임시 상태인 이미지만 선택
+    ).update({"is_temp": False})
+
     # 변경사항을 DB에 커밋
     db.commit()
 
@@ -185,18 +254,28 @@ async def get_temp_diary(
         raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
     
     # temp_diary 정보 조회
-    temp_diary = db.query(TempDiary).filter(TempDiary.id == temp_id, TempDiary.user_id == user_id, TempDiary.status == 0).first()
+    temp_diary = db.query(TempDiary).filter(
+        TempDiary.id == temp_id,
+        TempDiary.user_id == user_id,
+        TempDiary.status == 0
+    ).first()
     if not temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
 
+    # temp_diary와 관련된 가장 최근의 이미지 가져오기
+    recent_image = db.query(Image).filter(
+        Image.temp_diary_id == temp_id,
+        Image.is_temp == 1,
+        Image.is_deleted == False
+    ).order_by(Image.created_at.desc()).first()
+
     # 필요한 데이터 반환 (NULL 값은 포함하지 않음)
     response_data = {}
-    # temp_diary의 각 필드가 존재할 경우에만 추가
     if temp_diary.id is not None:
         response_data["temp_id"] = temp_diary.id
-    if temp_diary.date is not None:  # temp_diary에 date가 존재하는지 확인
-        response_data["date"] = temp_diary.date  # date 컬럼 값을 추가
-        target_date = temp_diary.date  # target_date는 temp_diary의 date로 설정
+    if temp_diary.date is not None:
+        response_data["date"] = temp_diary.date
+        target_date = temp_diary.date
     if user.nickname is not None:
         response_data["nickname"] = user.nickname
     if temp_diary.title is not None:
@@ -208,6 +287,10 @@ async def get_temp_diary(
     if temp_diary.story is not None:
         response_data["story"] = temp_diary.story
 
+    # 이미지 정보 추가 (가장 최근 이미지 또는 None)
+    response_data["image"] = S3_BASE_URL + recent_image.image_url if recent_image else None
+
+    # 기타 정보 추가
     daily_image_count = get_daily_image_count(db, user_id)
     image_count = get_image_count_for_date(db, user_id, target_date)
     response_data["remain_count"] = daily_image_count
@@ -216,7 +299,7 @@ async def get_temp_diary(
     return {
         "status": 200,
         "message": "임시 다이어리를 조회 완료.",
-        "data": response_data  # 변환된 데이터를 반환
+        "data": response_data
     }
 
 @router.post("/cancel")
@@ -421,27 +504,48 @@ async def delete_diary(
         "id": diary_id
     }
 
-# /diaries/search/{keyword}
+
 @router.get("/search")
-async def search_diary(keyword: str, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+async def search_diary(
+    keyword: str, 
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_current_user_id)
+):
     if keyword == "":
         # 빈 키워드일 경우 모든 다이어리 조회
         diaries = db.query(DiaryModel).filter(
             DiaryModel.is_deleted == False,
-            DiaryModel.user_id == user_id  # 현재 사용자의 다이어리만 조회
+            DiaryModel.user_id == user_id
         ).all()
+
+        # 데이터 가공
+        results = []
+        for diary in diaries:
+            image = db.query(Image).filter(
+                Image.diary_id == diary.id,
+                Image.is_active == True
+            ).first()
+            image_url = image.image_url if image else None
+            results.append({
+                "id": diary.id,
+                "date": diary.date.strftime("%Y-%m-%d"),
+                "title": diary.title,
+                "image": S3_BASE_URL + image_url if image_url else None,
+                "bookmark": diary.like,
+            })
+
         return {
             "status": 200,
             "message": "모든 다이어리 조회 완료",
-            "data": diaries,
+            "data": results,
         }
 
     # 키워드 검색
     diaries = db.query(DiaryModel).filter(
-        (DiaryModel.title.like(f"%{keyword}%")) |  # 제목에서 키워드 검색
-        (DiaryModel.story.like(f"%{keyword}%")),   # 내용에서 키워드 검색
-        (DiaryModel.is_deleted == False),           # 삭제되지 않은 다이어리
-        (DiaryModel.user_id == user_id)             # 현재 사용자의 다이어리만 조회
+        (DiaryModel.title.like(f"%{keyword}%")) | 
+        (DiaryModel.story.like(f"%{keyword}%")),
+        DiaryModel.is_deleted == False,
+        DiaryModel.user_id == user_id
     ).all()
 
     if not diaries:
@@ -451,16 +555,19 @@ async def search_diary(keyword: str, db: Session = Depends(get_db), user_id: int
             "data": []
         }
 
+    # 데이터 가공
     results = []
     for diary in diaries:
-        # diary에 연결된 이미지 가져오기
-        image = db.query(Image).filter(Image.diary_id == diary.id, Image.is_active == True).first()
-        image_url = image.image_url if image else None  # 이미지가 있으면 URL, 없으면 None
+        image = db.query(Image).filter(
+            Image.diary_id == diary.id,
+            Image.is_active == True
+        ).first()
+        image_url = image.image_url if image else None
         results.append({
             "id": diary.id,
-            "date": diary.date.strftime("%Y-%m-%d"),  # 날짜 포맷
+            "date": diary.date.strftime("%Y-%m-%d"),
             "title": diary.title,
-            "image": image_url,
+            "image": S3_BASE_URL + image_url if image_url else None,
             "bookmark": diary.like,
         })
 
@@ -472,6 +579,7 @@ async def search_diary(keyword: str, db: Session = Depends(get_db), user_id: int
 
 def get_datetime_by_date(date):
     return datetime.strptime(date, "%Y%m%d")
+
 
 @router.get("/main")
 async def get_diaries(
@@ -538,13 +646,19 @@ async def get_diaries(
 
     diaries = diaries_query.all()
     
+    # 이미지 URL 처리
+    def get_image_url(images):
+        if images:
+            return S3_BASE_URL + images[0].image_url
+        return None  # 기본 이미지 URL
+
     # result 리스트 생성
     if type == "calendar":
         result = [
             {
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
-                "image": diary.images[0].image_url if diary.images else "띠로리로고",
+                "image": get_image_url(diary.images),
                 "bookmark": diary.like,
             }
             for diary in diaries
@@ -555,7 +669,7 @@ async def get_diaries(
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
                 "title": getattr(diary, "title", None),
-                "image": diary.images[0].image_url if diary.images else "띠로리로고",
+                "image": get_image_url(diary.images),
                 "bookmark": diary.like,
             }
             for diary in diaries
@@ -608,7 +722,7 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
                 "title": diary.title,
-                "image": image_url,  # single image URL or None
+                "image": S3_BASE_URL + image_url if image_url else None,  # single image URL or None
                 "bookmark": 1 if diary.like else 0  # bookmark as 1 or 0
             })
         
@@ -647,7 +761,7 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
                 "title": diary.title,
-                "image": image_url,  # single image URL or None
+                "image": S3_BASE_URL + image_url if image_url else None,  # single image URL or None
                 "bookmark": True if diary.like else False  # bookmark as True or False
             })
         
@@ -680,7 +794,6 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
             Image.temp_diary_id == diary.id,
             Image.is_deleted == False
         ).all()  # 모든 관련 이미지를 가져오기
-        print(temp_diary_images)
 
     try:
         # mood와 weather 값을 Enum을 통해 문자열로 변환하여 반환
@@ -704,7 +817,7 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
                 "mood": mood,
                 "weather": weather,
                 "title": diary.title,
-                "image": image_url,
+                "image": S3_BASE_URL + image_url if image_url else None,  # single image URL or None
                 "story": diary.story,
                 "bookmark": diary.like
             }
