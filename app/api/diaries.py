@@ -631,23 +631,6 @@ async def get_diaries(
                 status_code=400,
                 detail="잘못된 날짜 형식입니다. 'YYYYMMDD' 형식을 사용하세요."
             )
-
-    # type이 'calendar'일 때 'start'와 'end' 파라미터 확인
-    elif type == "calendar":
-        if not start or not end:
-            raise HTTPException(
-                status_code=400,
-                detail="type이 'calendar'일 때는 'start'와 'end' 파라미터가 필요합니다."
-            )
-        try:
-            start_date = datetime.strptime(start, "%Y%m%d")
-            end_date = datetime.strptime(end, "%Y%m%d")
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail="잘못된 날짜 형식입니다. 'YYYYMMDD' 형식을 사용하세요."
-            )
-
     else:
         raise HTTPException(
             status_code=400,
@@ -665,6 +648,7 @@ async def get_diaries(
         )
     )
 
+    # type에 따른 정렬
     if type == "calendar":
         diaries_query = diaries_query.order_by(DiaryModel.date.asc())
     elif type == "list":
@@ -674,27 +658,20 @@ async def get_diaries(
     diaries_with_images = diaries_query.all()
 
     # result 리스트 생성
-    if type == "calendar":
-        result = [
-            {
-                "id": diary.id,
-                "date": diary.date.strftime("%Y-%m-%d"),
-                "image": S3_BASE_URL + image.image_url if image and image.is_temp == 1 else None,  # 이미지가 있으면 URL, 없으면 None
-                "bookmark": diary.like,
-            }
-            for diary, image in diaries_with_images
-        ]
-    else:  # type이 'list'일 때
-        result = [
-            {
-                "id": diary.id,
-                "date": diary.date.strftime("%Y-%m-%d"),
-                "title": getattr(diary, "title", None),
-                "image": S3_BASE_URL + image.image_url if image and image.is_temp == 1 else None,  # 이미지가 있으면 URL, 없으면 None
-                "bookmark": diary.like,
-            }
-            for diary, image in diaries_with_images
-        ]
+    result = []
+    for diary, image in diaries_with_images:
+        # is_temp 조건에 따른 이미지 URL 설정
+        image_url = S3_BASE_URL + image.image_url if image and image.is_temp == 1 else None
+
+        # 응답 데이터 구조 생성
+        diary_data = {
+            "id": diary.id,
+            "date": diary.date.strftime("%Y-%m-%d"),
+            "title": diary.title,
+            "image": image_url,
+            "bookmark": diary.like,
+        }
+        result.append(diary_data)
 
     return {
         "status": 200,
