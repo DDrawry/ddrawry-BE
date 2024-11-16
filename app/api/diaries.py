@@ -164,7 +164,6 @@ async def edit_diary(
     db.query(DiaryModel).filter(
         DiaryModel.user_id == user_id,
         DiaryModel.date == diary.date,
-        DiaryModel.id != new_diary.id  # 새로 생성된 다이어리는 제외
     ).update({"is_deleted": True})
 
     # 새로 생성된 다이어리와 같은 날짜의 temp_diary 상태를 1로 업데이트
