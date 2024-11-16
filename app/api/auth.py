@@ -51,7 +51,7 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
         user_response = await client.get(user_info_url, headers=user_headers)
 
         if user_response.status_code != 200:
-            raise HTTPException(status_code=403, detail="Kakao 사용자 정보 요청 실패")
+            raise HTTPException(status_code=401, detail="Kakao 사용자 정보 요청 실패")
 
         user_info = user_response.json()
         kakao_id = user_info.get("id")
@@ -154,7 +154,7 @@ async def kakao_logout(
             logout_response = await client.post(kakao_logout_url, headers=headers)
 
             if logout_response.status_code != 200:
-                raise HTTPException(status_code=logout_response.status_code, detail=f"Kakao 로그아웃에 실패했습니다. 오류: {logout_response.text}")
+                raise HTTPException(status_code=401, detail="KaKao 액세스 토큰 만료되었습니다.")
 
         response.delete_cookie(key="refresh_token")
         db.commit()
