@@ -157,9 +157,10 @@ async def edit_diary(
         ).first()
         if image:
             image.is_temp = True
+            image.diary_id = existing_diary.id  # 기존 다이어리 ID로 설정
             db.commit()
             db.refresh(image)
-            
+
     # 새로 생성된 다이어리와 같은 날짜의 temp_diary 상태를 1로 업데이트
     db.query(TempDiary).filter(
         TempDiary.user_id == user_id,
@@ -573,7 +574,6 @@ async def search_diary(
 def get_datetime_by_date(date):
     return datetime.strptime(date, "%Y%m%d")
 
-
 @router.get("/main")
 async def get_diaries(
     type: str,
@@ -615,20 +615,36 @@ async def get_diaries(
                 detail="잘못된 날짜 형식입니다. 'YYYYMMDD' 형식을 사용하세요."
             )
 
+    # type이 'calendar'일 때 'start'와 'end' 파라미터 확인
+    elif type == "calendar":
+        if not start or not end:
+            raise HTTPException(
+                status_code=400,
+                detail="type이 'calendar'일 때는 'start'와 'end' 파라미터가 필요합니다."
+            )
+        try:
+            start_date = datetime.strptime(start, "%Y%m%d")
+            end_date = datetime.strptime(end, "%Y%m%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="잘못된 날짜 형식입니다. 'YYYYMMDD' 형식을 사용하세요."
+            )
+
     else:
         raise HTTPException(
             status_code=400,
             detail="잘못된 type 값입니다. 'list' 또는 'calendar'를 사용하세요."
         )
 
-    # 다이어리 조회 쿼리
+    # 다이어리 조회 쿼리 (LEFT JOIN 사용하여 이미지가 없을 때도 포함)
     diaries_query = (
-        db.query(DiaryModel)
-        .options(joinedload(DiaryModel.images))
+        db.query(DiaryModel, Image)
+        .join(Image, DiaryModel.id == Image.diary_id, isouter=True)  # LEFT JOIN
         .filter(
             DiaryModel.date.between(start_date, end_date),
             DiaryModel.is_deleted == False,
-            DiaryModel.user_id == user_id
+            DiaryModel.user_id == user_id,
         )
     )
 
@@ -637,13 +653,8 @@ async def get_diaries(
     elif type == "list":
         diaries_query = diaries_query.order_by(DiaryModel.date.desc())
 
-    diaries = diaries_query.all()
-    
-    # 이미지 URL 처리
-    def get_image_url(images):
-        if images:
-            return S3_BASE_URL + images[0].image_url
-        return None  # 기본 이미지 URL
+    # 쿼리 실행
+    diaries_with_images = diaries_query.all()
 
     # result 리스트 생성
     if type == "calendar":
@@ -651,10 +662,10 @@ async def get_diaries(
             {
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
-                "image": get_image_url(diary.images),
+                "image": S3_BASE_URL + image.image_url if image and image.is_temp == 1 else None,  # 이미지가 있으면 URL, 없으면 None
                 "bookmark": diary.like,
             }
-            for diary in diaries
+            for diary, image in diaries_with_images
         ]
     else:  # type이 'list'일 때
         result = [
@@ -662,10 +673,10 @@ async def get_diaries(
                 "id": diary.id,
                 "date": diary.date.strftime("%Y-%m-%d"),
                 "title": getattr(diary, "title", None),
-                "image": get_image_url(diary.images),
+                "image": S3_BASE_URL + image.image_url if image and image.is_temp == 1 else None,  # 이미지가 있으면 URL, 없으면 None
                 "bookmark": diary.like,
             }
-            for diary in diaries
+            for diary, image in diaries_with_images
         ]
 
     return {
@@ -785,6 +796,7 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
         # edit=True일 때는 기존 temp_diary와 연결된 모든 이미지들을 가져옵니다.
         temp_diary_images = db.query(Image).filter(
             Image.temp_diary_id == diary.id,
+            Image.is_temp == True,
             Image.is_deleted == False
         ).all()  # 모든 관련 이미지를 가져오기
 
