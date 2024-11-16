@@ -141,7 +141,7 @@ async def kakao_logout(
         refresh_payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = refresh_payload.get("user_id")
 
-        token_entry = db.query(Token).filter(Token.user_id == user_id, Token.expires_at.is_(None)).order_by(Token.created_at.desc()).first()
+        token_entry = db.query(Token).filter(Token.user_id == user_id).order_by(Token.created_at.desc()).first()
         if not token_entry:
             raise HTTPException(status_code=404, detail="Access token not found")
 
