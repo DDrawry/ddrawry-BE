@@ -403,13 +403,13 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
             }
         }
 
-    # 다이어리가 존재할 경우 다이어리의 내용을 바탕으로 임시 다이어리 생성
-    image_url = db.query(Image.image_url).filter(
-        Image.diary_id == diary.id,
-        Image.is_temp == 1
-    ).scalar()  # 단일 값 추출
 
     if diary:
+        image_url = db.query(Image.image_url).filter(
+            Image.diary_id == diary.id,
+            Image.is_temp == 1
+        ).scalar()  # 단일 값 추출
+
         new_temp_diary = TempDiary(
             user_id=user_id,
             diary_id=diary.id,  # 기존 다이어리 ID 추가
@@ -501,7 +501,7 @@ async def delete_diary(
 
     # 정확한 매칭을 위해 정규 표현식 사용
     images_to_delete = db.query(Image).filter(
-        Image.image_url.op('REGEXP')(fr'^{extracted_user_id}/\d{{4}}-\d{{2}}-\d{{2}}/'),
+        Image.image_url.op('REGEXP')(fr'^{extracted_user_id}/{extracted_date}/'),
         Image.is_deleted.is_(False)
     ).all()
     
