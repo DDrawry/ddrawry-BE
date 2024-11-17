@@ -141,13 +141,19 @@ async def edit_diary(
         diary_date = datetime.strptime(diary.date, '%Y-%m-%d')
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
-    
-    # 같은 경로의 기존 이미지의 is_temp 상태를 False로 업데이트
-    date_path = f"{user_id}/{diary_date.strftime('%Y-%m-%d')}/"
-    db.query(Image).filter(
-        Image.image_url.startswith(date_path),
-        Image.is_temp == True
-    ).update({"is_temp": False})
+
+    # image 필드가 비어 있으면 연결된 이미지의 is_temp 값을 모두 0으로 설정
+    if diary.image == "":
+        db.query(Image).filter(
+            Image.diary_id == existing_diary.id
+        ).update({"is_temp": False})
+    else:
+        # 같은 경로의 기존 이미지의 is_temp 상태를 False로 업데이트
+        date_path = f"{user_id}/{diary_date.strftime('%Y-%m-%d')}/"
+        db.query(Image).filter(
+            Image.image_url.startswith(date_path),
+            Image.is_temp == True
+        ).update({"is_temp": False})
 
     # 새로운 이미지의 is_temp 상태를 True로 설정 (image가 None이 아닌 경우에만)
     if diary.image:
@@ -571,7 +577,8 @@ async def search_diary(
     for diary in diaries:
         image = db.query(Image).filter(
             Image.diary_id == diary.id,
-            Image.is_active == True
+            Image.is_active == True,
+            Image.is_temp == True
         ).first()
         image_url = image.image_url if image else None
         results.append({
@@ -639,13 +646,12 @@ async def get_diaries(
 
     # 다이어리 조회 쿼리 (LEFT JOIN 사용하여 이미지가 없을 때도 포함)
     diaries_query = (
-        db.query(DiaryModel, Image)
-        .join(Image, DiaryModel.id == Image.diary_id, isouter=True)  # LEFT JOIN
+        db.query(DiaryModel)
         .filter(
             DiaryModel.date.between(start_date, end_date),
             DiaryModel.is_deleted == False,
             DiaryModel.user_id == user_id,
-        )
+        ).options(joinedload(DiaryModel.images))  # 이미지 로드
     )
 
     # type에 따른 정렬
@@ -655,17 +661,14 @@ async def get_diaries(
         diaries_query = diaries_query.order_by(DiaryModel.date.desc())
 
     # 쿼리 실행
-    diaries_with_images = diaries_query.all()
+    diaries = diaries_query.all()
 
-    # result 리스트 생성
     result = []
-    for diary, image in diaries_with_images:
-        if image and image.is_temp == 0:
-            continue
-        # is_temp 조건에 따른 이미지 URL 설정
-        image_url = S3_BASE_URL + image.image_url if image else None
+    for diary in diaries:
+        # 이미지 필터링
+        images = [img for img in diary.images if img.is_temp == 1]  # is_temp가 1인 이미지만 포함
+        image_url = S3_BASE_URL + images[0].image_url if images else None  # 첫 번째 이미지 URL
 
-        # 응답 데이터 구조 생성
         diary_data = {
             "id": diary.id,
             "date": diary.date.strftime("%Y-%m-%d"),
@@ -715,7 +718,8 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             image = db.query(Image).filter(
                 Image.diary_id == diary.id,
                 Image.is_active == True,
-                Image.is_deleted == False
+                Image.is_deleted == False,
+                Image.is_temp == True
             ).first()  # get the first image
             image_url = image.image_url if image else None
             result.append({
@@ -754,7 +758,8 @@ async def get_like_diaries(type: str, date: str = None, db: Session = Depends(ge
             image = db.query(Image).filter(
                 Image.diary_id == diary.id,
                 Image.is_active == True,
-                Image.is_deleted == False
+                Image.is_deleted == False,
+                Image.is_temp == True
             ).first()  # get the first image
             image_url = image.image_url if image else None
             result.append({
