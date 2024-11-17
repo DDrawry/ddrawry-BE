@@ -111,6 +111,9 @@ async def get_images_by_temp_id(
     if not temp_diary:
         raise HTTPException(status_code=404, detail="TempDiary not found")
     
+    if temp_diary.status == 1:
+        raise HTTPException(status_code=400, detail="TempDiary status is 1, cannot retrieve images")
+    
     # TempDiary에서 user_id와 date 정보 추출
     date = temp_diary.date.strftime("%Y-%m-%d")  # "YYYY-MM-DD" 형식으로 변환
 

@@ -482,34 +482,41 @@ async def delete_diary(
     # 다이어리 소유자 확인
     if diary_to_delete.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this diary")
+    
+    # 이미지가 존재하는지 체크 (없으면 관련 이미지 삭제 처리 안 함)
     first_image = db.query(Image).filter(
         Image.diary_id == diary_id,
         Image.is_deleted.is_(False)
     ).first()
     
-    # 이미지가 없는 경우 바로 종료
-    if not first_image or not first_image.image_url:
-        raise HTTPException(status_code=404, detail="No associated images found for this diary")
-    
-    # {user_id}/{date} 추출
-    match = re.search(r"^(\d+)/(\d{4}-\d{2}-\d{2})", first_image.image_url)
-    if not match:
-        raise HTTPException(status_code=400, detail="Invalid image format")
+    if first_image and first_image.image_url:
+        # {user_id}/{date} 추출
+        match = re.search(r"^(\d+)/(\d{4}-\d{2}-\d{2})", first_image.image_url)
+        if not match:
+            raise HTTPException(status_code=400, detail="Invalid image format")
 
-    extracted_user_id = match.group(1)
-    extracted_date = match.group(2)
+        extracted_user_id = match.group(1)
+        extracted_date = match.group(2)
 
-    # 정확한 매칭을 위해 정규 표현식 사용
-    images_to_delete = db.query(Image).filter(
-        Image.image_url.op('REGEXP')(fr'^{extracted_user_id}/{extracted_date}/'),
-        Image.is_deleted.is_(False)
-    ).all()
-    
-    for image in images_to_delete:
-        image.is_deleted = True
+        # 정확한 매칭을 위해 정규 표현식 사용
+        images_to_delete = db.query(Image).filter(
+            Image.image_url.op('REGEXP')(fr'^{extracted_user_id}/{extracted_date}/'),
+            Image.is_deleted.is_(False)
+        ).all()
+        
+        for image in images_to_delete:
+            image.is_deleted = True  # 이미지 삭제 처리
 
     # diary의 is_deleted 필드를 True로 설정 (논리적 삭제)
     diary_to_delete.is_deleted = True
+
+    # 동일한 날짜를 가진 temp_diary의 status를 1로 업데이트
+    temp_diaries_to_update = db.query(TempDiary).filter(
+        TempDiary.date == diary_to_delete.date
+    ).all()
+
+    for temp_diary in temp_diaries_to_update:
+        temp_diary.status = 1  # status를 1로 설정
 
     # 모든 변경 사항 커밋
     db.commit()
