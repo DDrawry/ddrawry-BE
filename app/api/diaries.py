@@ -197,7 +197,6 @@ async def save_temp(
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id)
 ):
-    # 임시 다이어리가 존재하는지 확인
     existing_temp_diary = db.query(TempDiary).filter(TempDiary.id == temp_id).first()
     if not existing_temp_diary:
         raise HTTPException(status_code=404, detail="임시 다이어리를 찾을 수 없습니다.")
@@ -218,7 +217,13 @@ async def save_temp(
     if "nickname" in diary:
         existing_temp_diary.nickname = diary["nickname"] if diary["nickname"] != "" else None
     if "image" in diary:
-        existing_temp_diary.image = diary["image"] if diary["image"] != "" else None
+        # 링크 형식일 경우 필요한 경로만 추출
+        image_url = diary["image"]
+        if image_url:
+            parsed_image_url = image_url.split("s3.ap-northeast-2.amazonaws.com/")[-1]
+            existing_temp_diary.image = parsed_image_url if parsed_image_url else None
+        else:
+            existing_temp_diary.image = None
 
     # 수정된 시간 기록
     existing_temp_diary.updated_at = datetime.now(timezone.utc)
@@ -399,6 +404,11 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
         }
 
     # 다이어리가 존재할 경우 다이어리의 내용을 바탕으로 임시 다이어리 생성
+    image_url = db.query(Image.image_url).filter(
+        Image.diary_id == diary.id,
+        Image.is_temp == 1
+    ).scalar()  # 단일 값 추출
+
     if diary:
         new_temp_diary = TempDiary(
             user_id=user_id,
@@ -406,8 +416,9 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
             date=formatted_date,
             title=diary.title,
             weather=diary.weather,
+            image=image_url,
             mood=diary.mood,
-            nickname=diary.nickname,
+            nickname=user.nickname,
             story=diary.story
         )
         message = "기존 다이어리 내용을 기반으로 새 임시 다이어리가 생성되었습니다."
@@ -449,6 +460,9 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
         }
     }
 
+
+import re
+
 # /diaries/{id}
 @router.delete("/{diary_id}")
 async def delete_diary(
@@ -468,14 +482,30 @@ async def delete_diary(
     # 다이어리 소유자 확인
     if diary_to_delete.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this diary")
+    first_image = db.query(Image).filter(
+        Image.diary_id == diary_id,
+        Image.is_deleted.is_(False)
+    ).first()
     
-    images = db.query(Image).filter(
-        Image.diary_id == diary_id,  # 해당 다이어리와 연결된 이미지들
+    # 이미지가 없는 경우 바로 종료
+    if not first_image or not first_image.image_url:
+        raise HTTPException(status_code=404, detail="No associated images found for this diary")
+    
+    # {user_id}/{date} 추출
+    match = re.search(r"^(\d+)/(\d{4}-\d{2}-\d{2})", first_image.image_url)
+    if not match:
+        raise HTTPException(status_code=400, detail="Invalid image format")
+
+    extracted_user_id = match.group(1)
+    extracted_date = match.group(2)
+
+    # 정확한 매칭을 위해 정규 표현식 사용
+    images_to_delete = db.query(Image).filter(
+        Image.image_url.op('REGEXP')(fr'^{extracted_user_id}/\d{{4}}-\d{{2}}-\d{{2}}/'),
         Image.is_deleted.is_(False)
     ).all()
     
-    # 이미지 삭제 처리
-    for image in images:
+    for image in images_to_delete:
         image.is_deleted = True
 
     # diary의 is_deleted 필드를 True로 설정 (논리적 삭제)
@@ -484,11 +514,6 @@ async def delete_diary(
     # 모든 변경 사항 커밋
     db.commit()
 
-    # diary의 is_deleted 필드를 True로 설정 (논리적 삭제)
-    diary_to_delete.is_deleted = True
-
-    # 모든 변경 사항 커밋
-    db.commit()
     return {
         "status": 200,
         "message": "다이어리 삭제 성공",
