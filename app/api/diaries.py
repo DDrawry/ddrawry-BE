@@ -404,6 +404,11 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
         }
 
     # 다이어리가 존재할 경우 다이어리의 내용을 바탕으로 임시 다이어리 생성
+    image_url = db.query(Image.image_url).filter(
+        Image.diary_id == diary.id,
+        Image.is_temp == 1
+    ).scalar()  # 단일 값 추출
+
     if diary:
         new_temp_diary = TempDiary(
             user_id=user_id,
@@ -411,8 +416,9 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
             date=formatted_date,
             title=diary.title,
             weather=diary.weather,
+            image=image_url,
             mood=diary.mood,
-            nickname=diary.nickname,
+            nickname=user.nickname,
             story=diary.story
         )
         message = "기존 다이어리 내용을 기반으로 새 임시 다이어리가 생성되었습니다."
