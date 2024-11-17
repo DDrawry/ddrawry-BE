@@ -217,36 +217,11 @@ async def save_temp(
         existing_temp_diary.date = diary["date"] if diary["date"] != "" else None
     if "nickname" in diary:
         existing_temp_diary.nickname = diary["nickname"] if diary["nickname"] != "" else None
+    if "image" in diary:
+        existing_temp_diary.image = diary["image"] if diary["image"] != "" else None
 
     # 수정된 시간 기록
     existing_temp_diary.updated_at = datetime.now(timezone.utc)
-
-    # 다이어리 날짜 파싱
-    try:
-        diary_date = datetime.strptime(existing_temp_diary.date, '%Y-%m-%d')
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
-    
-    # 기존 이미지 경로 업데이트
-    date_path = f"{user_id}/{diary_date.strftime('%Y-%m-%d')}/"
-    db.query(Image).filter(
-        Image.image_url.startswith(date_path),
-        Image.is_temp == True
-    ).update({"is_temp": False})
-
-    # 전달받은 이미지 URL 처리
-    if "image" in diary and diary["image"]:
-        image_url = diary["image"].replace("https://ddrawry-bucket-test-1.s3.ap-northeast-2.amazonaws.com/", "")
-        image = db.query(Image).filter(
-            Image.image_url == image_url
-        ).first()
-
-        if not image:
-            raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.")
-        
-        # 이미지의 temp_diary_id 업데이트
-        image.temp_diary_id = temp_id
-        image.is_temp = True  # 새롭게 지정된 이미지로 임시 상태 설정
 
     # 변경사항을 DB에 커밋
     db.commit()
@@ -303,9 +278,9 @@ async def get_temp_diary(
         response_data["weather"] = WeatherEnum(temp_diary.weather).name.lower()
     if temp_diary.story is not None:
         response_data["story"] = temp_diary.story
-
-    # 이미지 정보 추가 (가장 최근 이미지 또는 None)
-    response_data["image"] = S3_BASE_URL + recent_image.image_url if recent_image else None
+    if temp_diary.image is not None:
+        response_data["image"] = S3_BASE_URL + temp_diary.image
+    
 
     # 기타 정보 추가
     daily_image_count = get_daily_image_count(db, user_id)
@@ -365,7 +340,7 @@ async def update_temp_diary_status(
             weather=None,
             mood=None,
             nickname=user.nickname,
-            story=None,
+            image=None,
             status=False  # status를 False로 설정
         )
         db.add(new_temp_diary)
@@ -496,10 +471,10 @@ async def delete_diary(
     # diary와 관련된 temp_diary 항목의 is_deleted를 True로 변경
     temp_diaries = db.query(TempDiary).filter(
         TempDiary.diary_id == diary_id,
-        TempDiary.is_deleted.is_(False)
+        TempDiary.status.is_(False)
     ).all()
     for temp_diary in temp_diaries:
-        temp_diary.is_deleted = True
+        temp_diary.status = True
 
     # temp_diary와 관련된 image 항목의 is_deleted를 True로 변경
     image_ids = [temp_diary.id for temp_diary in temp_diaries]
@@ -518,7 +493,9 @@ async def delete_diary(
     return {
         "status": 200,
         "message": "다이어리 삭제 성공",
-        "id": diary_id
+        "data": {
+            "id": diary_id
+        }
     }
 
 
@@ -836,6 +813,15 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
     ).update({"status": 1})
     db.commit()
 
+    temp_diary_image = db.query(Image).filter(
+        Image.diary_id == diary.id,
+        Image.is_temp == True,
+        Image.is_deleted == False
+    ).first()
+
+    # 만약 is_temp 이미지가 있으면 그 image_url을 temp_diary에 저장
+    temp_diary_image_url = temp_diary_image.image_url if temp_diary_image else None
+
     temp_diary = TempDiary(
         diary_id=diary.id,
         user_id=user.id,
@@ -844,7 +830,7 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
         mood=diary.mood,
         weather=diary.weather,
         title=diary.title,
-        image=image_url,
+        image=temp_diary_image_url,
         story=diary.story,
         like=diary.like
     )
