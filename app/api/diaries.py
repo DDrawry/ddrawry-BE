@@ -457,6 +457,7 @@ async def delete_diary(
     user_id: int = Depends(get_current_user_id)
 ):
     # 삭제할 다이어리 조회
+    
     diary_to_delete = db.query(DiaryModel).filter(
         DiaryModel.id == diary_id,
         DiaryModel.is_deleted.is_(False)
@@ -467,23 +468,21 @@ async def delete_diary(
     # 다이어리 소유자 확인
     if diary_to_delete.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this diary")
-
-    # diary와 관련된 temp_diary 항목의 is_deleted를 True로 변경
-    temp_diaries = db.query(TempDiary).filter(
-        TempDiary.diary_id == diary_id,
-        TempDiary.status.is_(False)
-    ).all()
-    for temp_diary in temp_diaries:
-        temp_diary.status = True
-
-    # temp_diary와 관련된 image 항목의 is_deleted를 True로 변경
-    image_ids = [temp_diary.id for temp_diary in temp_diaries]
+    
     images = db.query(Image).filter(
-        Image.temp_diary_id.in_(image_ids),
+        Image.diary_id == diary_id,  # 해당 다이어리와 연결된 이미지들
         Image.is_deleted.is_(False)
     ).all()
+    
+    # 이미지 삭제 처리
     for image in images:
         image.is_deleted = True
+
+    # diary의 is_deleted 필드를 True로 설정 (논리적 삭제)
+    diary_to_delete.is_deleted = True
+
+    # 모든 변경 사항 커밋
+    db.commit()
 
     # diary의 is_deleted 필드를 True로 설정 (논리적 삭제)
     diary_to_delete.is_deleted = True
