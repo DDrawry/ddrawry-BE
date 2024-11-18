@@ -462,27 +462,21 @@ async def search_diary_exist(date: int, db: Session = Depends(get_db), user_id: 
 
 
 import re
-
-# /diaries/{id}
 @router.delete("/{diary_id}")
 async def delete_diary(
     diary_id: int,
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id)
 ):
-    # 삭제할 다이어리 조회
-    
+    # 삭제할 다이어리 조회 (user_id 포함 검증)
     diary_to_delete = db.query(DiaryModel).filter(
         DiaryModel.id == diary_id,
+        DiaryModel.user_id == user_id,  # user_id 검증 추가
         DiaryModel.is_deleted.is_(False)
     ).first()
     if not diary_to_delete:
         raise HTTPException(status_code=404, detail="Diary not found or already deleted")
-    
-    # 다이어리 소유자 확인
-    if diary_to_delete.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this diary")
-    
+
     # 이미지가 존재하는지 체크 (없으면 관련 이미지 삭제 처리 안 함)
     first_image = db.query(Image).filter(
         Image.diary_id == diary_id,
@@ -510,9 +504,10 @@ async def delete_diary(
     # diary의 is_deleted 필드를 True로 설정 (논리적 삭제)
     diary_to_delete.is_deleted = True
 
-    # 동일한 날짜를 가진 temp_diary의 status를 1로 업데이트
+    # 동일한 날짜를 가진 temp_diary의 status를 1로 업데이트 (user_id 검증 추가)
     temp_diaries_to_update = db.query(TempDiary).filter(
-        TempDiary.date == diary_to_delete.date
+        TempDiary.date == diary_to_delete.date,
+        TempDiary.user_id == user_id  # user_id 검증 추가
     ).all()
 
     for temp_diary in temp_diaries_to_update:
