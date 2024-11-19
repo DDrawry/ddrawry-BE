@@ -102,7 +102,6 @@ async def new_diary(
         }
     }
 
-
 @router.put("/{diary_id}")
 async def edit_diary(
     diary_id: int, 
@@ -123,31 +122,30 @@ async def edit_diary(
     existing_diary.weather = diary.weather  # 이미 Enum으로 변환됨
     existing_diary.date = diary.date
     existing_diary.nickname = diary.nickname
-    existing_diary.updated_at = datetime.now(timezone.utc)  
+    existing_diary.updated_at = datetime.now(timezone.utc)
 
+    # TempDiary 업데이트
     db.query(TempDiary).filter(
         TempDiary.user_id == user_id,
-        TempDiary.date == diary.date,  # 변환된 날짜와 일치하는 조건 추가
+        TempDiary.date == diary.date,
         TempDiary.status != 1  # 상태가 1이 아닌 경우
     ).update({"status": 1})
-    
-    # image_url에서 S3 URL 부분 제거 (image가 None이 아닌 경우에만)
-    relative_image_url = ""
-    if diary.image:
-        relative_image_url = diary.image.replace(S3_BASE_URL, "")
-    
+
     # diary.date를 datetime 객체로 변환
     try:
         diary_date = datetime.strptime(diary.date, '%Y-%m-%d')
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
-
-    # image 필드가 비어 있으면 연결된 이미지의 is_temp 값을 모두 0으로 설정
-    if diary.image == "":
+    
+    # 요청에서 image 필드 처리
+    if 'image' not in diary.dict() or diary.image is None:  # image 필드가 없거나 None인 경우
         db.query(Image).filter(
             Image.diary_id == existing_diary.id
         ).update({"is_temp": False})
-    else:
+    else:  # image 필드가 포함된 경우
+        # image_url에서 S3 URL 부분 제거
+        relative_image_url = diary.image.replace(S3_BASE_URL, "")
+        
         # 같은 경로의 기존 이미지의 is_temp 상태를 False로 업데이트
         date_path = f"{user_id}/{diary_date.strftime('%Y-%m-%d')}/"
         db.query(Image).filter(
@@ -155,8 +153,7 @@ async def edit_diary(
             Image.is_temp == True
         ).update({"is_temp": False})
 
-    # 새로운 이미지의 is_temp 상태를 True로 설정 (image가 None이 아닌 경우에만)
-    if diary.image:
+        # 새로운 이미지의 is_temp 상태를 True로 설정
         image = db.query(Image).filter(
             Image.image_url == relative_image_url,
             Image.is_temp == False
@@ -167,13 +164,6 @@ async def edit_diary(
             db.commit()
             db.refresh(image)
 
-    # 새로 생성된 다이어리와 같은 날짜의 temp_diary 상태를 1로 업데이트
-    db.query(TempDiary).filter(
-        TempDiary.user_id == user_id,
-        TempDiary.date == diary.date,  # 변환된 날짜와 일치하는 조건 추가
-        TempDiary.status != 1  # 상태가 1이 아닌 경우
-    ).update({"status": 1})
-    
     db.commit()
 
     last_temp_diary_id = db.query(TempDiary.id).filter(
@@ -189,7 +179,7 @@ async def edit_diary(
             "temp_id": last_temp_diary_id[0] if last_temp_diary_id else None  # Last TempDiary id
         }
     }
-
+    
 @router.put("/temp/{temp_id}")
 async def save_temp(
     temp_id: int,
@@ -204,26 +194,24 @@ async def save_temp(
         raise HTTPException(status_code=403, detail="해당 사용자가 아닙니다.")
     
     # 필요한 경우에만 필드를 업데이트
-    if "title" in diary:
-        existing_temp_diary.title = diary["title"] if diary["title"] != "" else None
-    if "story" in diary:
-        existing_temp_diary.story = diary["story"] if diary["story"] != "" else None
-    if "weather" in diary:
-        existing_temp_diary.weather = WeatherEnum[diary["weather"].lower()].value if diary["weather"] != "" else None
-    if "mood" in diary:
-        existing_temp_diary.mood = MoodEnum[diary["mood"].lower()].value if diary["mood"] != "" else None
-    if "date" in diary:
-        existing_temp_diary.date = diary["date"] if diary["date"] != "" else None
-    if "nickname" in diary:
-        existing_temp_diary.nickname = diary["nickname"] if diary["nickname"] != "" else None
-    if "image" in diary:
-        # 링크 형식일 경우 필요한 경로만 추출
-        image_url = diary["image"]
-        if image_url:
-            parsed_image_url = image_url.split("s3.ap-northeast-2.amazonaws.com/")[-1]
-            existing_temp_diary.image = parsed_image_url if parsed_image_url else None
-        else:
-            existing_temp_diary.image = None
+    existing_temp_diary.title = diary.get("title") or None
+    existing_temp_diary.story = diary.get("story") or None
+    existing_temp_diary.weather = (
+        WeatherEnum[diary["weather"].lower()].value if "weather" in diary and diary["weather"] else None
+    )
+    existing_temp_diary.mood = (
+        MoodEnum[diary["mood"].lower()].value if "mood" in diary and diary["mood"] else None
+    )
+    existing_temp_diary.date = diary.get("date") or None
+    existing_temp_diary.nickname = diary.get("nickname") or None
+    
+    # 이미지 필드가 아예 없으면 null로 설정
+    image_url = diary.get("image", None)  # 필드가 없으면 None
+    if image_url:
+        parsed_image_url = image_url.split("s3.ap-northeast-2.amazonaws.com/")[-1]
+        existing_temp_diary.image = parsed_image_url if parsed_image_url else None
+    else:
+        existing_temp_diary.image = None
 
     # 수정된 시간 기록
     existing_temp_diary.updated_at = datetime.now(timezone.utc)
