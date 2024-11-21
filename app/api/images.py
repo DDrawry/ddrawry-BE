@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 import os
 from openai import OpenAI
@@ -103,6 +103,27 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error during image generation or upload: {str(e)}")
     
+from datetime import datetime, date
+
+@router.get("/count")
+async def remain_image_count(
+    date: date = Query(...),  # 쿼리 파라미터로 받기, 필수로 입력해야 함
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_current_user_id)
+):
+    # 남은 이미지 개수를 계산
+    remaining_count = get_daily_image_count(db=db, user_id=user_id)
+    image_count = get_image_count_for_date(db=db, user_id=user_id, target_date=date)
+
+    return {
+        "status": 200,
+        "message": "Image count retrieved successfully",
+        "data": {
+            "remain_count": remaining_count,
+            "image_count": image_count
+        }
+    }
+    
 @router.get("/{temp_id}")
 async def get_images_by_temp_id(
     temp_id: int,
@@ -184,26 +205,4 @@ async def delete_image(image_id: int, db: Session = Depends(get_db), user_id: in
         }
     }
 
-from datetime import datetime, timedelta, date
 
-@router.get("/remain/{temp_id}")
-async def remain_image_count(
-    temp_id: int, 
-    db: Session = Depends(get_db), 
-    user_id: int = Depends(get_current_user_id)
-):
-
-    today = date.today()
-    start_of_day = datetime.combine(today, datetime.min.time())
-    end_of_day = datetime.combine(today, datetime.max.time())
-    print(f"start: {start_of_day}, end: {end_of_day}")
-    # 남은 이미지 개수를 계산
-    remaining_count = get_daily_image_count(db=db, user_id=user_id)
-
-    return {
-        "status": 200,
-        "message": "Image count retrieved successfully",
-        "data": {
-            "image_count": remaining_count
-        }
-    }
