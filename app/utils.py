@@ -104,16 +104,25 @@ async def generate_and_upload_image_to_s3(image_url: str, user_id: int, date: st
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error during image processing or upload: {str(e)}")
-    
+
+
+from pytz import timezone
+
+def get_korean_today():
+    korea_tz = timezone('Asia/Seoul')  # pytz를 사용하여 타임존 설정
+    return datetime.now(korea_tz).date()
 
 from datetime import datetime
+import logging
 # 하루 최대 이미지 생성 횟수
 MAX_DAILY_IMAGE_COUNT = 100
 
+logger = logging.getLogger(__name__)
+
 def get_daily_image_count(db: Session, user_id: int) -> int:
-    today = date.today()
-    start_of_day = datetime.combine(today, datetime.min.time())
-    end_of_day = datetime.combine(today, datetime.max.time())
+    today = get_korean_today()
+    start_of_day = datetime.combine(today, datetime.min.time(), tzinfo=timezone('Asia/Seoul'))
+    end_of_day = datetime.combine(today, datetime.max.time(), tzinfo=timezone('Asia/Seoul'))
 
     used_count = db.query(func.count(ImageModel.id)).join(
         TempDiary, ImageModel.temp_diary_id == TempDiary.id
