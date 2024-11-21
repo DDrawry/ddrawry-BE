@@ -23,7 +23,6 @@ S3_BASE_URL= os.getenv("S3_BASE_URL")
 api_key = os.getenv("OPENAI_TEST_KEY")
 client = OpenAI(api_key=api_key)
 
-
 def get_korean_now():
     korea_tz = timezone('Asia/Seoul')  # pytz를 사용하여 타임존 설정
     return datetime.now(korea_tz)

@@ -25,6 +25,7 @@ async def new_diary(
     db: Session = Depends(get_db), 
     user_id: int = Depends(get_current_user_id)
 ):
+    user = db.query(User).filter(User.id == user_id).first()
     # 다이어리 생성
     new_diary = DiaryModel(
         user_id=user_id,
@@ -33,7 +34,7 @@ async def new_diary(
         weather=diary.weather,
         mood=diary.mood,
         date=diary.date,  # 변환된 날짜 사용
-        nickname=diary.nickname,
+        nickname=user.nickname,
         created_at=datetime.now(),
         updated_at=datetime.now(),
     )
@@ -109,6 +110,7 @@ async def edit_diary(
     db: Session = Depends(get_db), 
     user_id: int = Depends(get_current_user_id)
 ):
+    user = db.query(User).filter(User.id == user_id).first()
     existing_diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id).first()
     if not existing_diary:
         raise HTTPException(status_code=404, detail="Diary not found")
@@ -121,7 +123,7 @@ async def edit_diary(
     existing_diary.mood = diary.mood  # 이미 Enum으로 변환됨
     existing_diary.weather = diary.weather  # 이미 Enum으로 변환됨
     existing_diary.date = diary.date
-    existing_diary.nickname = diary.nickname
+    existing_diary.nickname = user.nickname
     existing_diary.updated_at = datetime.now(timezone.utc)
 
     # TempDiary 업데이트
@@ -810,7 +812,7 @@ async def get_diary(id: int, edit: Optional[bool] = None, db: Session = Depends(
             "data": {
                 "id": diary.id,
                 "date": diary.date,
-                "nickname": diary.nickname,
+                "nickname": user.nickname,
                 "mood": mood,
                 "weather": weather,
                 "title": diary.title,
