@@ -16,4 +16,11 @@ export PYTHONPATH=/ddrawry
 # FastAPI 애플리케이션을 Gunicorn + Uvicorn worker로 실행
 echo "Starting FastAPI application..."
 # 로그 레벨을 debug로 설정
-gunicorn -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout 120 --log-level debug app.main:app
+
+gunicorn -w 2 -k uvicorn.workers.UvicornWorker \
+    --bind 0.0.0.0:8000 \
+    --timeout 120 \
+    --log-level debug \
+    --access-logfile - \
+    --error-logfile - \
+    app.main:app
