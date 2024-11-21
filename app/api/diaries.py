@@ -3,7 +3,7 @@ from schemas.schema import MoodEnum, WeatherEnum, DiaryCreate, StatusUpdateReque
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.models import Diary as DiaryModel, Image, User, TempDiary
-from ..utils import get_current_user_id, get_daily_image_count, get_image_count_for_date, upload_image_to_s3
+from ..utils import get_current_user_id, upload_image_to_s3
 from ..database import get_db
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -275,13 +275,6 @@ async def get_temp_diary(
         response_data["story"] = temp_diary.story
     if temp_diary.image is not None:
         response_data["image"] = S3_BASE_URL + temp_diary.image
-    
-
-    # 기타 정보 추가
-    daily_image_count = get_daily_image_count(db, user_id)
-    image_count = get_image_count_for_date(db, user_id, target_date)
-    response_data["remain_count"] = daily_image_count
-    response_data["image_count"] = image_count
 
     return {
         "status": 200,
