@@ -7,6 +7,8 @@ from ..utils import get_current_user_id, generate_and_upload_image_to_s3, get_da
 from ..database import get_db
 from app.models import TempDiary, Image
 from datetime import datetime
+import pytz
+
 
 
 from sqlalchemy.orm import Session
@@ -22,6 +24,8 @@ api_key = os.getenv("OPENAI_TEST_KEY")
 client = OpenAI(api_key=api_key)
 
 
+KST = pytz.timezone("Asia/Seoul")
+korean_now = datetime.now(KST)
 
 class ImageRequest(BaseModel):
     temp_id: int
@@ -78,7 +82,7 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
         new_image = Image(
             temp_diary_id=request.temp_id,  # temp_id로 해당 temp_diary와 연결
             image_url=relative_image_url,  # 경로만 저장
-            created_at=datetime.utcnow(),  # 생성 시간
+            created_at=korean_now,  # 생성 시간
             is_temp=False  # 임시 이미지로 설정 (필요시 수정)
         )
         db.add(new_image)
@@ -181,3 +185,26 @@ async def delete_image(image_id: int, db: Session = Depends(get_db), user_id: in
         }
     }
 
+from datetime import datetime, timedelta, date
+
+@router.get("/remain/{temp_id}")
+async def remain_image_count(
+    temp_id: int, 
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_current_user_id)
+):
+
+    today = date.today()
+    start_of_day = datetime.combine(today, datetime.min.time())
+    end_of_day = datetime.combine(today, datetime.max.time())
+    print(f"start: {start_of_day}, end: {end_of_day}")
+    # 남은 이미지 개수를 계산
+    remaining_count = get_daily_image_count(db=db, user_id=user_id)
+
+    return {
+        "status": 200,
+        "message": "Image count retrieved successfully",
+        "data": {
+            "image_count": remaining_count
+        }
+    }

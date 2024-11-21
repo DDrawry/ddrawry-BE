@@ -21,6 +21,7 @@ openai = "^1.51.2"
 boto3 = "^1.35.55"
 requests = "^2.32.3"
 pillow = "^11.0.0"
+pytz = "^2024.2"
 
 
 [build-system]

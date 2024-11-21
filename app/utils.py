@@ -110,29 +110,27 @@ async def generate_and_upload_image_to_s3(image_url: str, user_id: int, date: st
         raise HTTPException(status_code=500, detail=f"Error during image processing or upload: {str(e)}")
     
 
-
+from datetime import datetime
 # 하루 최대 이미지 생성 횟수
 MAX_DAILY_IMAGE_COUNT = 100
 
 def get_daily_image_count(db: Session, user_id: int) -> int:
     today = date.today()
-    
-    # TempDiary와 조인하여 user_id가 일치하는 이미지를 대상으로 하루 동안 생성된 개수를 구합니다.
+    start_of_day = datetime.combine(today, datetime.min.time())
+    end_of_day = datetime.combine(today, datetime.max.time())
+
     used_count = db.query(func.count(ImageModel.id)).join(
         TempDiary, ImageModel.temp_diary_id == TempDiary.id
     ).filter(
         TempDiary.user_id == user_id,
-        ImageModel.created_at >= today,
-        ImageModel.created_at < today + timedelta(days=1),
+        ImageModel.created_at >= start_of_day,
+        ImageModel.created_at <= end_of_day,
         ImageModel.is_deleted == False,
         ImageModel.is_active == True
     ).scalar()
 
-    # 남은 가능 횟수를 계산
     remaining_count = MAX_DAILY_IMAGE_COUNT - used_count
-    # 남은 횟수가 음수가 되지 않도록 조정
     return max(0, remaining_count)
-
 
 def get_image_count_for_date(db: Session, user_id: int, target_date: date) -> int:
     # TempDiary와 관련된 Image를 날짜별로 카운트하는 쿼리 작성
