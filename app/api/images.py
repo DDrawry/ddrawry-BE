@@ -7,7 +7,7 @@ from ..utils import get_current_user_id, generate_and_upload_image_to_s3, get_da
 from ..database import get_db
 from app.models import TempDiary, Image
 from datetime import datetime
-import pytz
+from pytz import timezone
 
 
 
@@ -24,8 +24,9 @@ api_key = os.getenv("OPENAI_TEST_KEY")
 client = OpenAI(api_key=api_key)
 
 
-KST = pytz.timezone("Asia/Seoul")
-korean_now = datetime.now(KST)
+def get_korean_now():
+    korea_tz = timezone('Asia/Seoul')  # pytz를 사용하여 타임존 설정
+    return datetime.now(korea_tz)
 
 class ImageRequest(BaseModel):
     temp_id: int
@@ -76,13 +77,12 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
         s3_image_response = await generate_and_upload_image_to_s3(image_url, user_id=user_id, date=date)
 
         # S3 URL에서 경로만 추출 (예: /1/2024-11-17/1.jpg)
-        relative_image_url = s3_image_response["data"]["image_url"].replace("s3://your-s3-bucket/", "")
 
         # 생성된 이미지 정보를 Image 모델에 저장
         new_image = Image(
             temp_diary_id=request.temp_id,  # temp_id로 해당 temp_diary와 연결
-            image_url=relative_image_url,  # 경로만 저장
-            created_at=korean_now,  # 생성 시간
+            image_url=s3_image_response,  # 경로만 저장
+            created_at=get_korean_now(),  # 생성 시간
             is_temp=False  # 임시 이미지로 설정 (필요시 수정)
         )
         db.add(new_image)
@@ -95,7 +95,7 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
             "status": 200,
             "message": "Image generated and uploaded successfully, saved to database",
             "data": {
-                "image_url": S3_BASE_URL + relative_image_url,
+                "image_url": S3_BASE_URL + s3_image_response,
                 "remain_count": remaining_count, # 정확한 남은 횟수 반환
                 "image_count": image_count
             }

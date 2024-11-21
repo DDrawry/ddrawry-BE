@@ -100,11 +100,7 @@ async def generate_and_upload_image_to_s3(image_url: str, user_id: int, date: st
             output.seek(0)  # 파일 포인터를 처음으로 이동
             s3_client.put_object(Bucket=bucket_name, Key=file_name, Body=output, ContentType="image/jpeg")
 
-        return {
-            "status": 200,
-            "message": "Image generated and uploaded successfully",
-            "data": {"image_url": f"s3://your-s3-bucket/{file_name}"}
-        }
+        return file_name
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error during image processing or upload: {str(e)}")
@@ -125,7 +121,6 @@ def get_daily_image_count(db: Session, user_id: int) -> int:
         TempDiary.user_id == user_id,
         ImageModel.created_at >= start_of_day,
         ImageModel.created_at <= end_of_day,
-        ImageModel.is_deleted == False,
         ImageModel.is_active == True
     ).scalar()
 
