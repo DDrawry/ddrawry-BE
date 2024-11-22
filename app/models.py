@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Date, String, ForeignKey, TIMESTAMP, Text, Boolean
+from sqlalchemy import Column, Integer, Date, String, ForeignKey, TIMESTAMP, Text, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship
@@ -44,6 +44,7 @@ class Diary(Base):
     like = Column(Boolean, nullable=False, default=False)
     
     images = relationship("Image", backref="diary", lazy="joined")
+    shares = relationship("Share", back_populates="diary", cascade="all, delete-orphan")  # Share 모델과 연결
 
 
 class TempDiary(Base):
@@ -112,3 +113,14 @@ class Prompt(Base):
     is_use = Column(Boolean, nullable=True, default=True)
 
 
+
+class Share(Base):
+    __tablename__ = "shares"
+
+    id = Column(Integer, primary_key=True, index=True)
+    diary_id = Column(Integer, ForeignKey("diary.id"), nullable=False)  
+    token = Column(String(255), unique=True, nullable=False)  # 공유 토큰, 길이 255로 설정
+    expired_at = Column(DateTime, nullable=False)  # 만료 시간
+    is_active = Column(Boolean, default=True)  # 활성화 여부
+
+    diary = relationship("Diary", back_populates="shares")  # 다이어리와 관계 설정
