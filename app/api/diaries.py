@@ -1,11 +1,11 @@
 from typing import List, Optional
 from schemas.schema import MoodEnum, WeatherEnum, DiaryCreate, StatusUpdateRequest, ShareImageRequest
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
-from app.models import Diary as DiaryModel, Image, User, TempDiary
+from app.models import Diary as DiaryModel, Image, User, TempDiary, Share, Diary
 from ..utils import get_current_user_id, upload_image_to_s3
 from ..database import get_db
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
@@ -900,44 +900,123 @@ async def like_diary(diary_id: int, db: Session = Depends(get_db), user_id: int 
             }
         }
 
-@router.post("/share")
-async def share_diary_image(
-    request: ShareImageRequest,  # 요청 본문으로 받기
-    user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+
+import uuid
+@router.post("/share/{diary_id}")
+def create_share_link(
+    diary_id: int, 
+    request: Request, 
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_current_user_id)
 ):
+    # 다이어리 존재 여부 및 삭제 여부 확인
+    diary = db.query(Diary).filter(Diary.id == diary_id).first()
+
+    if not diary:
+        raise HTTPException(status_code=404, detail="Diary not found")
     
-    if "," in request.image:
-        image_data = request.image.split(",")[1]
-    else:
-        image_data = request.image
-        
-    try:
-        image_data = base64.b64decode(image_data)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid image data")
+    # 삭제된 다이어리라면, 해당 다이어리와 관련된 공유 링크 비활성화
+    if diary.is_deleted:
+        # 해당 다이어리와 관련된 활성화된 공유 링크를 비활성화
+        db.query(Share).filter(Share.diary_id == diary_id, Share.is_active == True).update(
+            {"is_active": False},
+            synchronize_session=False
+        )
+        db.commit()  # 변경 사항 커밋
+
+        raise HTTPException(status_code=400, detail="해당 다이어리는 삭제되었습니다. 공유 할 수 없습니다.")
     
-    # S3에 이미지 업로드
-    s3_url = upload_image_to_s3(image_data, user_id)
+    # 사용자 확인
+    if diary.user_id != user_id:
+        raise HTTPException(status_code=403, detail="해당 사용자가 아닙니다.")
     
-    # 이미지 URL과 정보를 데이터베이스에 저장
-    new_image = Image(
-        diary_id=request.diary_id,
-        temp_diary_id=None,  # 필요 시 temp_diary_id를 설정
-        image_url=s3_url,
-        created_at=datetime.utcnow(),
-        is_temp=False,
-        is_active=True,
-        is_deleted=False
-    )
-    db.add(new_image)
+    # 만료된 공유 링크의 is_active를 False로 설정
+    db.query(Share).filter(Share.expired_at <= datetime.utcnow(), Share.is_active == True).update({"is_active": False}, synchronize_session=False)
     db.commit()
-    db.refresh(new_image)  # 새로 추가된 이미지 정보를 새로고침하여 얻음
+
+    # 기존 활성화된 공유 링크 확인
+    existing_share = db.query(Share).filter(
+        Share.diary_id == diary_id, 
+        Share.is_active == True,
+        Share.expired_at > datetime.utcnow()  # 만료된 링크는 제외
+    ).first()
+
+    # 요청 URL에서 호스트 확인
+    query_params = request.query_params
+    if "dev" in query_params:
+        base_url = "http://localhost:8000"
+    else:
+        base_url = "https://yourapp.com"
+
+    if existing_share:
+        # 기존 유효한 링크가 있으면 그걸 그대로 반환
+        share_url = f"{base_url}/share/{diary_id}?token={existing_share.token}"
+
+    else:
+        # 유효한 링크가 없으면 새로운 링크 생성
+        token = str(uuid.uuid4())
+        expired_at = datetime.utcnow() + timedelta(days=3)  # 3일 만료
+        new_share = Share(diary_id=diary_id, token=token, expired_at=expired_at, is_active=True)
+
+        db.add(new_share)
+        db.commit()  # 커밋 후 새로 추가된 `new_share`를 반영
+        db.refresh(new_share)  # 새로 추가된 객체를 새로 갱신
+
+        share_url = f"{base_url}/share/{diary_id}?token={token}"
 
     return {
-        "status": "success",
-        "message": "Image uploaded and saved successfully",
+        "status": 200,
+        "message": "다이어리 공유 성공",
         "data": {
-            "image_url": S3_BASE_URL + s3_url
+            "share_url": share_url
+        }
+    }
+
+@router.get("/share/{diary_id}")
+def get_shared_diary(diary_id: int, token: str = Query(...), db: Session = Depends(get_db)):
+    # Share 테이블에서 token과 diary_id로 검색
+    share = db.query(Share).filter(Share.diary_id == diary_id, Share.token == token, Share.is_active == True).first()
+
+    # 공유된 다이어리 조회
+    diary = db.query(DiaryModel).filter(DiaryModel.id == diary_id, DiaryModel.is_deleted == False).first()
+
+    # 유효한 공유 링크가 없으면 에러 발생
+    if not share:
+        raise HTTPException(status_code=404, detail="유효한 공유 링크를 찾을 수 없습니다.")
+
+    if not diary:
+        raise HTTPException(status_code=404, detail=f"{diary_id}번 다이어리를 찾을 수 없습니다.")
+
+    # 2. mood와 weather 값을 Enum을 통해 문자열로 변환하여 반환
+    try:
+        mood = MoodEnum(diary.mood).name
+        weather = WeatherEnum(diary.weather).name
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid mood or weather value")
+
+    # 3. is_temp가 True인 이미지를 가져옵니다 (단일 이미지)
+    image = db.query(Image).filter(
+        Image.diary_id == diary.id,
+        Image.is_temp == True,
+        Image.is_deleted == False
+    ).first()  # 첫 번째 결과만 가져오기
+
+    # 이미지 URL이 없으면 None으로 설정
+    image_url = image.image_url if image else None
+
+    # 4. 다이어리 정보와 이미지 반환
+    return {
+        "status": 200,
+        "message": f"{id}번 다이어리 조회 완료",
+        "data": {
+            "id": diary.id,
+            "date": diary.date,
+            "nickname": user.nickname,
+            "mood": mood,
+            "weather": weather,
+            "title": diary.title,
+            "image": S3_BASE_URL + image_url if image_url else None,  # single image URL or None
+            "story": diary.story,
+            "bookmark": diary.like
         }
     }
