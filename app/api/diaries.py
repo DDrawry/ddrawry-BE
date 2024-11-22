@@ -941,17 +941,9 @@ def create_share_link(
         Share.expired_at > datetime.utcnow()  # 만료된 링크는 제외
     ).first()
 
-    # 요청 URL에서 호스트 확인
-    query_params = request.query_params
-    if "dev" in query_params:
-        base_url = "http://localhost:8000"
-    else:
-        base_url = "https://yourapp.com"
-
     if existing_share:
         # 기존 유효한 링크가 있으면 그걸 그대로 반환
-        share_url = f"{base_url}/share/{diary_id}?token={existing_share.token}"
-
+        token = existing_share.token
     else:
         # 유효한 링크가 없으면 새로운 링크 생성
         token = str(uuid.uuid4())
@@ -962,13 +954,11 @@ def create_share_link(
         db.commit()  # 커밋 후 새로 추가된 `new_share`를 반영
         db.refresh(new_share)  # 새로 추가된 객체를 새로 갱신
 
-        share_url = f"{base_url}/share/{diary_id}?token={token}"
-
     return {
         "status": 200,
         "message": "다이어리 공유 성공",
         "data": {
-            "share_url": share_url
+            "token": token  # token만 반환
         }
     }
 
@@ -986,6 +976,12 @@ def get_shared_diary(diary_id: int, token: str = Query(...), db: Session = Depen
 
     if not diary:
         raise HTTPException(status_code=404, detail=f"{diary_id}번 다이어리를 찾을 수 없습니다.")
+    
+    user = db.query(User).filter(User.id == diary.user_id).first()
+
+    # 사용자 정보를 찾을 수 없으면 에러 발생
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
     # 2. mood와 weather 값을 Enum을 통해 문자열로 변환하여 반환
     try:
