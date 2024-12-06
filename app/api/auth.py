@@ -28,7 +28,7 @@ PROD_REDIRECT_URI = os.getenv("PROD_REDIRECT_URI")
 async def kakao_callback(code: str, request: Request, response: Response, db: Session = Depends(get_db)):
     kakao_token_url = "https://kauth.kakao.com/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    redirect_uri = LOCAL_REDIRECT_URI if 'dev' in request.url.query else PROD_REDIRECT_URI
+    redirect_uri = LOCAL_REDIRECT_URI if '`dev`' in request.url.query else PROD_REDIRECT_URI
 
     data = {
         "grant_type": "authorization_code",
