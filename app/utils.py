@@ -115,7 +115,7 @@ def get_korean_today():
 from datetime import datetime
 import logging
 # 하루 최대 이미지 생성 횟수
-MAX_DAILY_IMAGE_COUNT = 100
+MAX_DAILY_IMAGE_COUNT = 3
 
 logger = logging.getLogger(__name__)
 
