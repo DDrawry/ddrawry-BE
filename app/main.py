@@ -20,7 +20,8 @@ app.add_middleware(
         "http://localhost:8000",  # 로컬 환경
         "https://localhost:5173",  # 로컬 환경
         "http://ec2-43-203-213-139.ap-northeast-2.compute.amazonaws.com:8000",  # EC2 서버
-        "https://ddrawry.site"
+        "https://ddrawry.site",
+        "https://www.ddrawry.site",
     ],
     allow_credentials=True,  # 쿠키 허용 여부
     allow_methods=["*"],  # 허용할 HTTP 메소드
