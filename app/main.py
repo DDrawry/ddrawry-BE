@@ -11,21 +11,19 @@ Base.metadata.create_all(bind=engine)
 from .api.v1 import V1
 
 app = FastAPI()
-app.include_router(V1)
 
+origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8000",  # 로컬 개발 환경
-        "https://localhost:5173",  # 로컬 개발 환경 (프론트엔드)
-        "https://ddrawry.site",  # 프로덕션 환경
-        "https://kauth.kakao.com/",
-        "https://kapi.kakao.com/" 
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(V1)
+
+
 
 @app.get("/")
 def read_root():
