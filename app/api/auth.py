@@ -36,8 +36,6 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
         "redirect_uri": redirect_uri,
         "code": code,
     }
-
-    print(data)
     async with httpx.AsyncClient() as client:
         token_response = await client.post(kakao_token_url, headers=headers, data=data)
         if token_response.status_code != 200:
