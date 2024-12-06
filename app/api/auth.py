@@ -56,70 +56,85 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
         kakao_id = user_info.get("id")
         nickname = user_info.get("properties", {}).get("nickname")
 
-        user = db.query(User).filter(User.kakao_id == kakao_id).first()
-        if user:
-            # 기존 사용자인 경우 설정 확인
-            setting = db.query(Setting).filter(Setting.user_id == user.id).first()
-            if not setting:
-                setting = Setting(user_id=user.id, dark_mode=False, notification=True, created_at=datetime.now())
-                db.add(setting)
+        user = db.query(User).filter(
+        User.kakao_id == kakao_id,
+        User.delete_at == None  # 삭제되지 않은 계정만 조회
+    ).first()
 
-            existing_tokens = db.query(Token).filter(
-                Token.user_id == user.id, 
-                Token.expires_at.is_(None)
-            ).all()
-            
-            for token in existing_tokens:
-                token.expires_at = datetime.now()  # 만료 시간 기록
-        else:
-            user = User(kakao_id=kakao_id, nickname=nickname, created_at=datetime.now())
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-
+    if user:
+        # 기존 사용자인 경우 설정 확인
+        setting = db.query(Setting).filter(Setting.user_id == user.id).first()
+        if not setting:
             setting = Setting(user_id=user.id, dark_mode=False, notification=True, created_at=datetime.now())
             db.add(setting)
 
-        # 새로운 액세스 토큰과 리프레시 토큰 저장
-        new_token = Token(
-            user_id=user.id,
-            token=kakao_access_token,  # 엑세스 토큰 저장
-            refresh_token=refresh_token,  # 리프레시 토큰 저장
-            created_at=datetime.now(),
-            expires_at=datetime.now() + timedelta(hours=6)  # 6시간 후 만료
+        existing_tokens = db.query(Token).filter(
+            Token.user_id == user.id, 
+            Token.expires_at.is_(None)
+        ).all()
+        
+        for token in existing_tokens:
+            token.expires_at = datetime.now()  # 만료 시간 기록
+    else:
+        # 새 사용자 생성 또는 탈퇴한 사용자의 카카오 ID로 새 계정 생성
+        user = User(
+            kakao_id=kakao_id, 
+            nickname=nickname, 
+            created_at=datetime.now()
         )
-        db.add(new_token)
+        db.add(user)
         db.commit()
+        db.refresh(user)
 
-        # JWT 토큰 생성
-        jwt_access_payload = {
-            "user_id": user.id,
-            "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),
-        }
-        access_token = jwt.encode(jwt_access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-        jwt_refresh_payload = {
-            "user_id": user.id,
-            "exp": datetime.utcnow() + timedelta(minutes=JWT_REFRESH_EXPIRATION_MINUTES),  # 1시간으로 설정
-        }
-        refresh_token = jwt.encode(jwt_refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            max_age=24 * 60 * 60,
-            samesite="none",
-            secure=True
+        setting = Setting(
+            user_id=user.id, 
+            dark_mode=False, 
+            notification=True, 
+            created_at=datetime.now()
         )
+        db.add(setting)
 
-        return {
-            "status": 200,
-            "message": "토큰 발급 성공",
-            "data": {
-                "access_token": access_token,
-            }
+    # 새로운 액세스 토큰과 리프레시 토큰 저장
+    new_token = Token(
+        user_id=user.id,
+        token=kakao_access_token,
+        refresh_token=refresh_token,
+        created_at=datetime.now(),
+        expires_at=datetime.now() + timedelta(hours=6)
+    )
+    db.add(new_token)
+    db.commit()
+
+    # JWT 토큰 생성
+    jwt_access_payload = {
+        "user_id": user.id,
+        "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),
+    }
+    access_token = jwt.encode(jwt_access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+    jwt_refresh_payload = {
+        "user_id": user.id,
+        "exp": datetime.utcnow() + timedelta(minutes=JWT_REFRESH_EXPIRATION_MINUTES),
+    }
+    refresh_token = jwt.encode(jwt_refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        max_age=24 * 60 * 60,
+        samesite="none",
+        secure=True
+    )
+
+    return {
+        "status": 200,
+        "message": "토큰 발급 성공",
+        "data": {
+            "access_token": access_token,
         }
+    }
+    
 
 @router.get("/kakao/logout")
 async def kakao_logout(

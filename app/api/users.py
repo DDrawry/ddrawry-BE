@@ -110,3 +110,40 @@ async def search_user(
             "notification": user_settings.notification
         }
     }
+
+
+@router.delete("/withdrawal")
+async def user_withdrawal(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    # 현재 사용자 정보 조회
+    user = db.query(User).filter(User.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    
+    if user.delete_at:
+        raise HTTPException(status_code=400, detail="이미 탈퇴한 사용자입니다.")
+    
+    # soft delete 처리
+    user.delete_at = datetime.now()
+    user.nickname = f"탈퇴한 사용자_{user.id}"  # 닉네임 변경
+    
+    # 사용자 설정 정보도 함께 비활성화
+    user_settings = db.query(Setting).filter(Setting.user_id == user_id).first()
+    if user_settings:
+        user_settings.notification = False  # 알림 설정 비활성화
+    
+    try:
+        db.commit()
+        return {
+            "status": 200,
+            "message": "회원탈퇴가 완료되었습니다.",
+            "data": {
+                "id": user_id
+            }
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="회원탈퇴 처리 중 오류가 발생했습니다.")
