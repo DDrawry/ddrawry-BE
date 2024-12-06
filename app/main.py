@@ -13,15 +13,19 @@ from .api.v1 import V1
 app = FastAPI()
 app.include_router(V1)
 
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,  # 쿠키 허용 여부
-    allow_methods=["*"],  # 허용할 HTTP 메소드
-    allow_headers=["*"],  # 허용할 헤더
+    allow_origins=[
+        "http://localhost:8000",  # 로컬 개발 환경
+        "https://localhost:5173",  # 로컬 개발 환경 (프론트엔드)
+        "https://ddrawry.site",  # 프로덕션 환경
+        "https://kauth.kakao.com/",
+        "https://kapi.kakao.com/" 
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
 
 @app.get("/")
 def read_root():
