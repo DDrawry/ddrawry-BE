@@ -56,10 +56,23 @@ async def kakao_callback(code: str, request: Request, response: Response, db: Se
         kakao_id = user_info.get("id")
         nickname = user_info.get("properties", {}).get("nickname")
 
+        # 오늘 해당 카카오 ID로 생성된 모든 계정 확인 (탈퇴 여부 관계없이)
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_accounts = db.query(User).filter(
+            User.kakao_id == kakao_id,
+            User.created_at >= today_start
+        ).count()
+
+        if today_accounts >= 3:  # 하루 최대 3회로 제한
+            raise HTTPException(
+                status_code=401,
+                detail="오늘은 더 이상 새 계정을 만들 수 없습니다. 내일 다시 시도해주세요."
+            )
+
         user = db.query(User).filter(
-        User.kakao_id == kakao_id,
-        User.delete_at == None  # 삭제되지 않은 계정만 조회
-    ).first()
+            User.kakao_id == kakao_id,
+            User.delete_at == None
+        ).first()
 
     if user:
         # 기존 사용자인 경우 설정 확인
