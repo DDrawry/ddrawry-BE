@@ -1,11 +1,12 @@
 import jwt
-from fastapi import HTTPException, Header, Request
+from fastapi import HTTPException, Header, Request, Depends
 from dotenv import load_dotenv
 
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.models import TempDiary, Image as ImageModel
+from app.models import TempDiary, User, Image as ImageModel
+from app.database import get_db  # DB 세션을 가져오는 함수를 import합니다.
 
 from PIL import Image
 
@@ -19,23 +20,39 @@ load_dotenv()
 JWT_SECRET = os.getenv("JWT_SECRET")  # JWT 비밀키
 JWT_ALGORITHM = "HS256"
 
-def get_current_user_id(authorization: str = Header(None)):
+def get_current_user_id(authorization: str = Header(None), db: Session = Depends(get_db)):
     if not authorization:
         raise HTTPException(status_code=401, detail="JWT 토큰이 없습니다.")
     
     try:
+        # Authorization 헤더에서 토큰 분리
         token_type, access_token = authorization.split()
         if token_type.lower() != "bearer":
             raise HTTPException(status_code=401, detail="유효하지 않은 인증 형식입니다.")
 
+        # JWT 디코딩
         payload = jwt.decode(access_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return payload.get("user_id")
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="유효하지 않은 JWT 토큰입니다.")
+        
+        # 사용자 조회
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        
+        # 삭제 여부 확인
+        if user.delete_at is not None:
+            raise HTTPException(status_code=403, detail="삭제된 사용자입니다.")
+        
+        return user_id
     except ValueError:
         raise HTTPException(status_code=401, detail="잘못된 Authorization 헤더 형식입니다.")
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="JWT 토큰이 만료되었습니다.")
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="유효하지 않은 JWT 토큰입니다.")
+
 
 
 # utils.py

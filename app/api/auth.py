@@ -174,7 +174,7 @@ async def kakao_logout(
 
         kakao_access_token = token_entry.token
 
-        kakao_logout_url = "https://kapi.kakao.com/v1/user/unlink"
+        kakao_logout_url = "https://kapi.kakao.com/v1/user/logout"
         headers = {"Authorization": f"Bearer {kakao_access_token}"}
 
         async with httpx.AsyncClient() as client:
