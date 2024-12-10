@@ -104,18 +104,24 @@ async def generate_and_upload_image_to_s3(image_url: str, user_id: int, date: st
         # S3에서 해당 디렉토리 내 파일 목록을 가져와서 count 계산
         response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=directory_path)
         count = 0
-        if 'Contents' in response:
-            # 파일 이름에 .jpg 또는 .jpeg가 포함된 파일만 카운팅
-            count = len([f for f in response['Contents'] if f['Key'].endswith('.jpg') or f['Key'].endswith('.jpeg')])
 
-        # 새로운 파일 이름 생성
-        file_name = f"{user_id}/{date}/{count + 1}.jpg"
+        if 'Contents' in response:
+            # WebP 확장자 포함된 파일만 카운팅
+            count = len([f for f in response['Contents'] if f['Key'].endswith('.webp')])
+
+        # 새 파일 이름 생성
+        file_name = f"{user_id}/{date}/{count + 1}.webp"
 
         # S3에 저장
         with io.BytesIO() as output:
-            img.save(output, format="JPEG")
+            img.save(output, format="WEBP", quality=90)  # WebP로 저장, 품질 조정 가능
             output.seek(0)  # 파일 포인터를 처음으로 이동
-            s3_client.put_object(Bucket=bucket_name, Key=file_name, Body=output, ContentType="image/jpeg")
+            s3_client.put_object(
+                Bucket=bucket_name,
+                Key=file_name,
+                Body=output,
+                ContentType="image/webp"
+            )
 
         return file_name
 

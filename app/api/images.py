@@ -65,8 +65,13 @@ async def generate_and_upload_image(request: ImageRequest, db: Session = Depends
         
         # 이미지를 생성하는 요청 (DALL-E 등 사용)
         image_response = client.images.generate(
-            model="dall-e-2",
-            prompt=f"Create a playful, childlike illustration based on the following story: '{translated_text}'.",
+            model="dall-e-3",
+            prompt=(
+                f"Create a heartwarming and visually appealing illustration in a 'picture diary' style, "
+                f"as if drawn by a child, inspired by the following story: '{translated_text}'. Use a soft, inviting style with a touch of playfulness. "
+                f"Avoid any text or words in the image. Ensure the illustration evokes warmth and comfort, without being bizarre or unsettling."
+            ),
+            quality="standard",
             n=1,
             size="1024x1024",
         )
